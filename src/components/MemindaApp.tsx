@@ -716,9 +716,9 @@ export default function MemindaApp() {
       });
       const data = await res.json();
       if (data.title) setNewTitle(data.title);
-      if (data.price) setNewPrice(String(data.price));
+      setNewPrice(data.price ? String(data.price) : "");
       if (data.store) setNewStore(data.store);
-      if (data.image) setNewImage(data.image);
+      setNewImage(data.image || "");
       if (data.description) setNewDesc(data.description);
       if (
         data.originalCurrency &&
@@ -2810,7 +2810,7 @@ export default function MemindaApp() {
             </div>
 
             {addTab === "link" && (
-              <div className="mt-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/80 p-3.5">
+              <div className="mt-3.5 rounded-2xl bg-orange-50/70 border border-orange-200/80 p-3.5">
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   {t.pasteUrlLabel}
                 </label>
@@ -2820,54 +2820,16 @@ export default function MemindaApp() {
                     value={urlInput}
                     onChange={(e) => setUrlInput(e.target.value)}
                     placeholder="https://www.amazon.com/... ან https://veli.store/..."
-                    className="flex-1 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="flex-1 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5A5F]"
                   />
                   <button
                     type="button"
                     onClick={() => handleAutoScrape()}
                     disabled={isScraping}
-                    className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 text-xs font-bold shrink-0 transition cursor-pointer"
+                    className="rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-4 py-2 text-xs font-extrabold shrink-0 shadow-xs transition cursor-pointer"
                   >
                     {isScraping ? "..." : t.fetchBtn}
                   </button>
-                </div>
-
-                <div className="mt-2.5">
-                  <p className="text-[11px] font-semibold text-slate-500 mb-1">
-                    {t.presetStoreLinksTitle}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      {
-                        label: "Amazon (USD->₾)",
-                        url: "https://www.amazon.com/dp/B0CHWRXH8B",
-                      },
-                      {
-                        label: "Zoommer.ge",
-                        url: "https://zoommer.ge/airpods-pro-2",
-                      },
-                      {
-                        label: "Veli.store",
-                        url: "https://veli.store/stanley-quencher",
-                      },
-                      {
-                        label: "Extra.ge",
-                        url: "https://extra.ge/delonghi-dedica",
-                      },
-                    ].map((preset) => (
-                      <button
-                        key={preset.url}
-                        type="button"
-                        onClick={() => {
-                          setUrlInput(preset.url);
-                          handleAutoScrape(preset.url);
-                        }}
-                        className="text-[11px] bg-white hover:bg-rose-100 text-slate-700 border border-slate-200 rounded-lg px-2 py-1 font-medium transition cursor-pointer"
-                      >
-                        ⚡ {preset.label}
-                      </button>
-                    ))}
-                  </div>
                 </div>
               </div>
             )}
