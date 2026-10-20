@@ -91,7 +91,29 @@ function decodeHtmlEntities(str: string): string {
     .trim();
 }
 
-function resolveAbsoluteUrl(candidate: string | null | undefined, baseUrl: string): string | null {
+function isBotOrErrorString(text: string | null | undefined): boolean {
+  if (!text) return true;
+  const lower = text.toLowerCase().trim();
+  if (lower.length < 2) return true;
+  return (
+    lower.includes("attention required") ||
+    lower.includes("cloudflare") ||
+    lower.includes("just a moment") ||
+    lower.includes("security service") ||
+    lower.includes("security verification") ||
+    lower.includes("access denied") ||
+    lower.includes("robot check") ||
+    lower.includes("522: connection timed out") ||
+    lower.includes("403 forbidden") ||
+    lower.includes("ddos-guard") ||
+    lower.includes("pardon our interruption")
+  );
+}
+
+function resolveAbsoluteUrl(
+  candidate: string | null | undefined,
+  baseUrl: string
+): string | null {
   if (!candidate || typeof candidate !== "string") return null;
   const trimmed = decodeHtmlEntities(candidate.trim());
   if (!trimmed || trimmed.startsWith("data:")) return trimmed || null;
@@ -110,6 +132,7 @@ function isLikelyLogoOrPlaceholder(imgUrl: string): boolean {
     lower.includes("site-logo") ||
     lower.includes("/logo.") ||
     lower.includes("/logo-") ||
+    lower.includes("new-share-image") ||
     lower.includes("placeholder") ||
     lower.includes("default-share") ||
     lower.includes("og-default") ||
@@ -173,10 +196,8 @@ function parsePriceNumber(val: unknown): number | null {
   let normalized = cleaned;
   if (cleaned.includes(",") && cleaned.includes(".")) {
     if (cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".")) {
-      // European format: 1.299,00
       normalized = cleaned.replace(/\./g, "").replace(",", ".");
     } else {
-      // US format: 1,299.00
       normalized = cleaned.replace(/,/g, "");
     }
   } else if (cleaned.includes(",")) {
@@ -193,6 +214,71 @@ function parsePriceNumber(val: unknown): number | null {
     return num;
   }
   return null;
+}
+
+/**
+ * Extracts clean search keywords from a product URL slug.
+ * e.g. "https://alta.ge/sarbeni-biliki/urevo-foldi-mini-2-treadmill-ur9tm0063-black-p40587"
+ * -> fullSlug: "Urevo Foldi Mini 2 Treadmill Ur9tm0063 Black"
+ * -> coreQuery: "urevo foldi mini 2"
+ */
+function extractProductSlugQueries(parsedUrl: URL): {
+  readableTitle: string;
+  fullQuery: string;
+  coreQuery: string;
+  keywords: string[];
+} {
+  const segments = parsedUrl.pathname
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Pick the most descriptive segment (longest slug, or segment before /dp/ on Amazon)
+  let targetSegment = "";
+  const dpIdx = segments.findIndex(
+    (s) => s.toLowerCase() === "dp" || s.toLowerCase() === "gp"
+  );
+  if (dpIdx > 0) {
+    targetSegment = segments[dpIdx - 1];
+  } else {
+    // Filter out purely numeric segments like "/207233" or "/111783/130768"
+    const nonNumeric = segments.filter((s) => !/^\d+$/.test(s) && s !== "product" && s !== "details");
+    targetSegment =
+      nonNumeric[nonNumeric.length - 1] || segments[segments.length - 1] || "";
+  }
+
+  const cleaned = decodeURIComponent(targetSegment)
+    .replace(/\.(html?|php|aspx?)$/i, "")
+    .replace(/-p\d+$/i, "") // Strip Zoommer/Alta "-p40587" suffix
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const words = cleaned.split(" ").filter((w) => w.length > 1);
+  // Filter out generic Georgian transliterated category words often appended at the end
+  const stopWords = new Set([
+    "sarbeni",
+    "biliki",
+    "tmis",
+    "feni",
+    "staileri",
+    "termosi",
+    "mobiluri",
+    "telefoni",
+    "fotoaparati",
+    "treadmill",
+  ]);
+  const modelWords = words.filter((w) => !stopWords.has(w.toLowerCase()));
+  const coreWords = (modelWords.length >= 2 ? modelWords : words).slice(0, 4);
+
+  const readableTitle = cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return {
+    readableTitle,
+    fullQuery: words.slice(0, 6).join(" "),
+    coreQuery: coreWords.join(" "),
+    keywords: coreWords.map((w) => w.toLowerCase()),
+  };
 }
 
 /**
@@ -225,7 +311,7 @@ function extractFromJsonLd(html: string, baseUrl: string) {
     const isProduct =
       typeVal === "Product" ||
       (Array.isArray(typeVal) && typeVal.includes("Product")) ||
-      (typeof typeVal === "string" && typeVal.toLowerCase().includes("product"));
+      (typeof typeVal === "string" && typeVal.toLowerCase() === "product");
 
     if (isProduct) return obj;
 
@@ -244,16 +330,23 @@ function extractFromJsonLd(html: string, baseUrl: string) {
       const product = findProductNode(parsed);
       if (!product) continue;
 
-      if (typeof product.name === "string" && !result.title) {
+      if (
+        typeof product.name === "string" &&
+        !isBotOrErrorString(product.name) &&
+        !result.title
+      ) {
         result.title = decodeHtmlEntities(product.name);
       }
-      if (typeof product.description === "string" && !result.description) {
+      if (
+        typeof product.description === "string" &&
+        !isBotOrErrorString(product.description) &&
+        !result.description
+      ) {
         result.description = decodeHtmlEntities(
           product.description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")
         );
       }
 
-      // Extract image from string, array, or ImageObject
       if (!result.image && product.image) {
         let imgCandidate: string | null = null;
         if (typeof product.image === "string") {
@@ -273,7 +366,6 @@ function extractFromJsonLd(html: string, baseUrl: string) {
         }
       }
 
-      // Extract price and currency from offers
       if (product.offers && !result.price) {
         const offersList = Array.isArray(product.offers)
           ? product.offers
@@ -308,7 +400,8 @@ function extractFromJsonLd(html: string, baseUrl: string) {
 }
 
 /**
- * Layer 2: Next.js __NEXT_DATA__ Extractor (Used by Veli.store, Zoommer.ge, Extra.ge, etc.)
+ * Layer 2: Next.js __NEXT_DATA__ Extractor (Zoommer.ge, Veli.store, etc.)
+ * Checks explicit product structures first so it never picks up menu/category items.
  */
 function extractFromNextData(html: string, baseUrl: string) {
   const result: {
@@ -329,94 +422,68 @@ function extractFromNextData(html: string, baseUrl: string) {
     const pageProps = nextData?.props?.pageProps;
     if (!pageProps || typeof pageProps !== "object") return result;
 
-    // Recursively look for a product-like object in pageProps
-    const visited = new Set<unknown>();
-    const searchProductObject = (obj: unknown, depth = 0) => {
-      if (!obj || typeof obj !== "object" || depth > 6 || visited.has(obj)) return;
-      visited.add(obj);
+    // 1. Check Zoommer / Alta sharePageData & initialProductData.product
+    const shareData = pageProps.sharePageData || pageProps.pageProps?.sharePageData;
+    const initProduct =
+      pageProps.initialProductData?.product ||
+      pageProps.pageProps?.initialProductData?.product ||
+      pageProps.product ||
+      pageProps.data?.product;
 
-      if (Array.isArray(obj)) {
-        for (const item of obj.slice(0, 10)) {
-          searchProductObject(item, depth + 1);
-        }
-        return;
+    if (shareData && typeof shareData === "object") {
+      if (typeof shareData.name === "string" && shareData.name.trim()) {
+        result.title = shareData.name.trim();
       }
-
-      const rec = obj as Record<string, unknown>;
-
-      // Check if this object looks like the main product
-      const hasName =
-        typeof rec.name === "string" ||
-        typeof rec.title === "string" ||
-        typeof rec.productName === "string";
-      const rawPriceCandidate =
-        rec.discountedPrice ??
-        rec.salePrice ??
-        rec.final_price ??
-        rec.finalPrice ??
-        rec.sellPrice ??
-        rec.currentPrice ??
-        rec.price;
-
-      if (hasName && rawPriceCandidate !== undefined) {
-        let numericPrice: number | null = null;
-        if (typeof rawPriceCandidate === "number" || typeof rawPriceCandidate === "string") {
-          numericPrice = parsePriceNumber(rawPriceCandidate);
-        } else if (
-          rawPriceCandidate &&
-          typeof rawPriceCandidate === "object"
-        ) {
-          const pObj = rawPriceCandidate as Record<string, unknown>;
-          numericPrice = parsePriceNumber(
-            pObj.discountedPrice ?? pObj.amount ?? pObj.value ?? pObj.price ?? pObj.final
-          );
-        }
-
-        if (numericPrice && !result.price) {
-          result.price = numericPrice;
-        }
-
-        if (!result.title) {
-          const tCandidate = (rec.name || rec.title || rec.productName) as string;
-          if (tCandidate && tCandidate.length > 2) {
-            result.title = tCandidate;
-          }
-        }
-
-        if (!result.image) {
-          const imgField =
-            rec.image ||
-            rec.imageUrl ||
-            rec.mainImage ||
-            rec.thumbnail ||
-            (Array.isArray(rec.images) ? rec.images[0] : undefined) ||
-            (Array.isArray(rec.gallery) ? rec.gallery[0] : undefined) ||
-            (Array.isArray(rec.media) ? rec.media[0] : undefined);
-
-          let rawImg: string | null = null;
-          if (typeof imgField === "string") rawImg = imgField;
-          else if (imgField && typeof imgField === "object") {
-            const iObj = imgField as Record<string, unknown>;
-            rawImg = String(iObj.url || iObj.src || iObj.original || iObj.large || "");
-          }
-
-          const resolved = resolveAbsoluteUrl(rawImg, baseUrl);
-          if (resolved && !isLikelyLogoOrPlaceholder(resolved)) {
-            result.image = resolved;
-          }
+      const p = parsePriceNumber(shareData.salePrice ?? shareData.price);
+      if (p) result.price = p;
+      if (typeof shareData.imageUrl === "string") {
+        const resolved = resolveAbsoluteUrl(shareData.imageUrl, baseUrl);
+        if (resolved && !isLikelyLogoOrPlaceholder(resolved)) {
+          result.image = resolved;
         }
       }
-
-      for (const [k, v] of Object.entries(rec)) {
-        // Skip unrelated lists like "relatedProducts", "similarProducts", "recommendations"
-        if (/related|similar|recommend|upsell|crosssell|Accessories/i.test(k)) {
-          continue;
-        }
-        searchProductObject(v, depth + 1);
+      if (typeof shareData.metaDescription === "string") {
+        result.description = shareData.metaDescription.trim();
       }
-    };
+    }
 
-    searchProductObject(pageProps);
+    if (initProduct && typeof initProduct === "object") {
+      if (!result.title && typeof initProduct.name === "string") {
+        result.title = initProduct.name.trim();
+      }
+      if (!result.price) {
+        const p = parsePriceNumber(
+          initProduct.salePrice ??
+            initProduct.discountedPrice ??
+            initProduct.final_price ??
+            initProduct.price
+        );
+        if (p) result.price = p;
+      }
+      if (!result.image) {
+        const rawImg =
+          initProduct.imageUrl ||
+          initProduct.mainImage ||
+          initProduct.image ||
+          (Array.isArray(initProduct.images) ? initProduct.images[0] : undefined);
+        const imgStr =
+          typeof rawImg === "string"
+            ? rawImg
+            : rawImg && typeof rawImg === "object"
+            ? String(rawImg.url || rawImg.src || "")
+            : "";
+        const resolved = resolveAbsoluteUrl(imgStr, baseUrl);
+        if (resolved && !isLikelyLogoOrPlaceholder(resolved)) {
+          result.image = resolved;
+        }
+      }
+      if (!result.description && typeof initProduct.description === "string") {
+        result.description = initProduct.description
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+    }
   } catch {
     // Ignore parse error
   }
@@ -437,7 +504,6 @@ function extractAmazonDetails(html: string, hostname: string) {
 
   let image: string | null = null;
 
-  // 1. Primary hiRes / large image in Amazon's colorImages JSON
   const hiResMatch =
     html.match(/"hiRes"\s*:\s*"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/i) ||
     html.match(/"large"\s*:\s*"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/i);
@@ -445,25 +511,24 @@ function extractAmazonDetails(html: string, hostname: string) {
     image = hiResMatch[1];
   }
 
-  // 2. data-old-hires attribute on #landingImage
   if (!image) {
     const oldHires = html.match(/data-old-hires=["'](https:\/\/[^"']+)["']/i);
     if (oldHires?.[1]) image = oldHires[1];
   }
 
-  // 3. data-a-dynamic-image JSON on #landingImage
   if (!image) {
     const dynMatch = html.match(
       /data-a-dynamic-image=["']([^"']*https:\/\/m\.media-amazon\.com\/images\/I\/[^"']+)["']/i
     );
     if (dynMatch?.[1]) {
       const decoded = decodeHtmlEntities(dynMatch[1]);
-      const urlMatch = decoded.match(/https:\/\/m\.media-amazon\.com\/images\/I\/[^"'\s\\]+/);
+      const urlMatch = decoded.match(
+        /https:\/\/m\.media-amazon\.com\/images\/I\/[^"'\s\\]+/
+      );
       if (urlMatch?.[0]) image = urlMatch[0];
     }
   }
 
-  // 4. #landingImage or #imgBlkFront src
   if (!image) {
     const landingSrc =
       html.match(/id=["']landingImage["'][^>]+src=["'](https:\/\/[^"']+)["']/i) ||
@@ -471,13 +536,14 @@ function extractAmazonDetails(html: string, hostname: string) {
     if (landingSrc?.[1]) image = landingSrc[1];
   }
 
-  // 5. Accurate Buy-Box Price on Amazon (prioritize priceToPay & corePriceDisplay)
   let price: number | null = null;
   let currency = detectDefaultCurrencyByDomain(hostname);
 
   const jsonCurrencyMatch =
     html.match(/"currencySymbol"\s*:\s*"([^"]+)"/i) ||
-    html.match(/id=["']twister-plus-price-data-price-unit["'][^>]+value=["']([A-Z]{3})["']/i);
+    html.match(
+      /id=["']twister-plus-price-data-price-unit["'][^>]+value=["']([A-Z]{3})["']/i
+    );
 
   if (jsonCurrencyMatch?.[1]) {
     const sym = jsonCurrencyMatch[1].trim().toUpperCase();
@@ -486,7 +552,6 @@ function extractAmazonDetails(html: string, hostname: string) {
     else if (sym === "£" || sym === "GBP") currency = "GBP";
   }
 
-  // Priority A: Explicit twister / customerVisiblePrice hidden input or priceToPay span
   const priceToPayMatch =
     html.match(
       /class=["'][^"']*priceToPay[^"']*["'][\s\S]{0,600}?<span[^>]+class=["']a-offscreen["'][^>]*>([^<]+)<\/span>/i
@@ -501,7 +566,9 @@ function extractAmazonDetails(html: string, hostname: string) {
 
   if (!price) {
     const jsonPriceMatch =
-      html.match(/id=["']twister-plus-price-data-price["'][^>]+value=["']([\d.]+)["']/i) ||
+      html.match(
+        /id=["']twister-plus-price-data-price["'][^>]+value=["']([\d.]+)["']/i
+      ) ||
       html.match(
         /name=["']items\[0\.base\]\[customerVisiblePrice\]\[amount\]["'][^>]+value=["']([\d.]+)["']/i
       ) ||
@@ -532,11 +599,11 @@ function extractAmazonDetails(html: string, hostname: string) {
     extractMeta(html, "og:description");
 
   return {
-    title: rawTitle,
+    title: isBotOrErrorString(rawTitle) ? null : rawTitle,
     image,
     price,
     currency,
-    description,
+    description: isBotOrErrorString(description) ? null : description,
   };
 }
 
@@ -570,7 +637,6 @@ function extractMetaPriceAndCurrency(
     }
   }
 
-  // Check explicit itemprop="price" elements in HTML
   const itempropPriceMatch =
     html.match(/itemprop=["']price["'][^>]+content=["']([\d.,]+)["']/i) ||
     html.match(/content=["']([\d.,]+)["'][^>]+itemprop=["']price["']/i) ||
@@ -587,48 +653,172 @@ function extractMetaPriceAndCurrency(
 }
 
 /**
- * Layer 5: Headless Browser Fallback via Microlink API for Cloudflare-protected or SPA sites
+ * Layer 5: Smart Recovery for Cloudflare-Blocked Stores (alta.ge, veli.store, vendoo.ge, etc.)
+ * Uses DuckDuckGo Search + Bing Image Search + Extra.ge SSR Catalog Cross-Lookup
+ * to retrieve the exact product title, official image, and Georgian market price (₾).
  */
-async function fetchViaMicrolink(targetUrl: string): Promise<{
+async function resolveCloudflareBlockedProduct(
+  parsedUrl: URL,
+  hostname: string
+): Promise<{
   title?: string;
   description?: string;
   image?: string;
   price?: number;
-  currency?: string;
-} | null> {
-  try {
-    const mlUrl = `https://api.microlink.io/?url=${encodeURIComponent(
-      targetUrl
-    )}&data.price.selector=${encodeURIComponent(
-      '[itemprop="price"], [data-price], .price, .product-price'
-    )}&data.price.attr=text`;
+}> {
+  const { readableTitle, fullQuery, coreQuery, keywords } =
+    extractProductSlugQueries(parsedUrl);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6500);
-    const res = await fetch(mlUrl, { signal: controller.signal });
-    clearTimeout(timeout);
+  const result: {
+    title?: string;
+    description?: string;
+    image?: string;
+    price?: number;
+  } = {};
 
-    if (!res.ok) return null;
-    const json = await res.json();
-    const data = json?.data;
-    if (!data) return null;
-
-    const imageCandidate = data.image?.url || data.logo?.url || undefined;
-    const parsedPrice = parsePriceNumber(data.price);
-
-    return {
-      title: typeof data.title === "string" ? data.title : undefined,
-      description:
-        typeof data.description === "string" ? data.description : undefined,
-      image:
-        imageCandidate && !isLikelyLogoOrPlaceholder(imageCandidate)
-          ? imageCandidate
-          : undefined,
-      price: parsedPrice ?? undefined,
-    };
-  } catch {
-    return null;
+  if (!coreQuery || coreQuery.length < 2) {
+    return result;
   }
+
+  const browserHeaders = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ka,en-US;q=0.9,en;q=0.8",
+  };
+
+  // Run DuckDuckGo Search, Bing Image Search, and Extra.ge Catalog Search in parallel
+  const [ddgTask, bingImgTask, extraTask] = await Promise.allSettled([
+    // 1. DuckDuckGo HTML search for exact store title & snippet
+    (async () => {
+      const q = `${hostname} ${coreQuery}`;
+      const res = await fetch(
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
+        { headers: browserHeaders, signal: AbortSignal.timeout(5000) }
+      );
+      if (!res.ok) return null;
+      const html = await res.text();
+      const titleMatch = html.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
+      const snippetMatch = html.match(
+        /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i
+      );
+      const t = titleMatch
+        ? decodeHtmlEntities(titleMatch[1].replace(/<[^>]+>/g, "").trim())
+        : undefined;
+      const s = snippetMatch
+        ? decodeHtmlEntities(snippetMatch[1].replace(/<[^>]+>/g, "").trim())
+        : undefined;
+      return { title: t, description: s };
+    })(),
+
+    // 2. Bing Image Search for official store CDN image
+    (async () => {
+      const q = `${hostname} ${fullQuery}`;
+      const res = await fetch(
+        `https://www.bing.com/images/search?q=${encodeURIComponent(q)}&form=HDRSC2`,
+        { headers: browserHeaders, signal: AbortSignal.timeout(5000) }
+      );
+      if (!res.ok) return null;
+      const html = await res.text();
+      const matches = [
+        ...html.matchAll(/murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;/gi),
+      ].map((m) => decodeHtmlEntities(m[1]));
+
+      const validImages = matches.filter((u) => !isLikelyLogoOrPlaceholder(u));
+      // Prefer image hosted on the store's own CDN if available
+      const storeBase = hostname.split(".")[0];
+      const storeCdnImg = validImages.find((u) =>
+        u.toLowerCase().includes(storeBase)
+      );
+      return storeCdnImg || validImages[0] || null;
+    })(),
+
+    // 3. Extra.ge SSR Product Catalog Lookup for exact GEL price & product metadata
+    (async () => {
+      const primaryBrandWord = keywords[0] || "";
+      const secondModelWord = keywords[1] || "";
+      if (!primaryBrandWord || primaryBrandWord.length < 2) return null;
+
+      // Try 3-word query first, then fallback to 2-word brand+model query (e.g., "stanley quencher")
+      const candidateQueries = [
+        keywords.slice(0, 3).join(" "),
+        keywords.slice(0, 2).join(" "),
+      ].filter((q, idx, arr) => q.length >= 3 && arr.indexOf(q) === idx);
+
+      for (const searchQ of candidateQueries) {
+        const res = await fetch(
+          `https://extra.ge/search?k=${encodeURIComponent(searchQ)}`,
+          { headers: browserHeaders, signal: AbortSignal.timeout(5000) }
+        );
+        if (!res.ok) continue;
+        const searchHtml = await res.text();
+        const prodLinks = [
+          ...searchHtml.matchAll(/href=["'](\/product\/[^"']+)["']/gi),
+        ].map((m) => m[1]);
+        const uniqueLinks = [...new Set(prodLinks)];
+
+        // Require the primary brand/model word (and second word if present) to match in the product slug
+        const bestLink = uniqueLinks.find((link) => {
+          const slugPart = link.toLowerCase();
+          const hasFirst = slugPart.includes(primaryBrandWord);
+          const hasSecond =
+            !secondModelWord ||
+            secondModelWord.length < 2 ||
+            slugPart.includes(secondModelWord);
+          return hasFirst && hasSecond;
+        });
+
+        if (!bestLink) continue;
+
+        const prodRes = await fetch(`https://extra.ge${bestLink}`, {
+          headers: browserHeaders,
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!prodRes.ok) continue;
+        const prodHtml = await prodRes.text();
+        return extractFromJsonLd(prodHtml, `https://extra.ge${bestLink}`);
+      }
+      return null;
+    })(),
+  ]);
+
+  if (ddgTask.status === "fulfilled" && ddgTask.value) {
+    if (ddgTask.value.title && !isBotOrErrorString(ddgTask.value.title)) {
+      result.title = ddgTask.value.title;
+    }
+    if (
+      ddgTask.value.description &&
+      !isBotOrErrorString(ddgTask.value.description)
+    ) {
+      result.description = ddgTask.value.description;
+    }
+  }
+
+  if (bingImgTask.status === "fulfilled" && bingImgTask.value) {
+    result.image = bingImgTask.value;
+  }
+
+  if (extraTask.status === "fulfilled" && extraTask.value) {
+    const ex = extraTask.value;
+    const exTitleLower = (ex.title || "").toLowerCase();
+    const primaryBrandWord = keywords[0] || "";
+    const isPrimaryMatch =
+      !primaryBrandWord || exTitleLower.includes(primaryBrandWord);
+
+    if (isPrimaryMatch) {
+      if (!result.title && ex.title) result.title = ex.title;
+      if (!result.description && ex.description)
+        result.description = ex.description;
+      if (ex.price) result.price = ex.price;
+      if (!result.image && ex.image) result.image = ex.image;
+    }
+  }
+
+  if (!result.title && readableTitle.length > 3) {
+    result.title = readableTitle;
+  }
+
+  return result;
 }
 
 export async function POST(req: NextRequest) {
@@ -684,10 +874,10 @@ export async function POST(req: NextRequest) {
     let finalPrice: number | null = null;
     let finalCurrency = detectDefaultCurrencyByDomain(hostname);
 
-    // Step 1: Direct HTML Fetch + Multi-Layer Parsing
+    // Step 1: Direct HTML Fetch + Multi-Layer Structured Parsing
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 7500);
+      const timeout = setTimeout(() => controller.abort(), 6500);
 
       const res = await fetch(fullUrl, {
         headers: {
@@ -704,13 +894,11 @@ export async function POST(req: NextRequest) {
 
       if (res.ok) {
         const html = await res.text();
-        const isBotPage =
-          /robot check|just a moment|attention required|cf-browser-verification/i.test(
-            html.slice(0, 4000)
-          );
+        const pageTitleTag = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
+        const isBotPage = isBotOrErrorString(pageTitleTag);
 
         if (!isBotPage) {
-          // A. JSON-LD Product Schema (Most reliable across all stores)
+          // A. JSON-LD Product Schema (Extra.ge, Shopify, WooCommerce, etc.)
           const ld = extractFromJsonLd(html, fullUrl);
           if (ld.title) finalTitle = ld.title;
           if (ld.description) finalDescription = ld.description;
@@ -720,7 +908,7 @@ export async function POST(req: NextRequest) {
             if (ld.currency) finalCurrency = ld.currency;
           }
 
-          // B. Next.js __NEXT_DATA__ (Veli.store, Zoommer.ge, Extra.ge, etc.)
+          // B. Next.js __NEXT_DATA__ (Zoommer.ge, etc.)
           const nextData = extractFromNextData(html, fullUrl);
           if (!finalTitle && nextData.title) finalTitle = nextData.title;
           if (!finalDescription && nextData.description)
@@ -749,8 +937,10 @@ export async function POST(req: NextRequest) {
             const ogTitle =
               extractMeta(html, "og:title") ||
               extractMeta(html, "twitter:title") ||
-              html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
-            if (ogTitle) finalTitle = decodeHtmlEntities(ogTitle.trim());
+              pageTitleTag;
+            if (ogTitle && !isBotOrErrorString(ogTitle)) {
+              finalTitle = decodeHtmlEntities(ogTitle.trim());
+            }
           }
 
           if (!finalDescription) {
@@ -758,7 +948,9 @@ export async function POST(req: NextRequest) {
               extractMeta(html, "og:description") ||
               extractMeta(html, "twitter:description") ||
               extractMeta(html, "description");
-            if (ogDesc) finalDescription = ogDesc;
+            if (ogDesc && !isBotOrErrorString(ogDesc)) {
+              finalDescription = ogDesc;
+            }
           }
 
           if (!finalImage) {
@@ -782,41 +974,42 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch {
-      // Proceed to Microlink fallback if direct fetch timed out or failed
+      // Direct fetch timed out or blocked; proceed to Step 2
     }
 
-    // Step 2: If title or image is still missing (e.g. Cloudflare / SPA), use Microlink API
+    // Step 2: If Cloudflare blocked the store (e.g., alta.ge, veli.store) or price/image is missing
     if (!finalTitle || !finalImage || !finalPrice) {
-      const ml = await fetchViaMicrolink(fullUrl);
-      if (ml) {
-        if (!finalTitle && ml.title) finalTitle = ml.title;
-        if (!finalDescription && ml.description)
-          finalDescription = ml.description;
-        if (!finalImage && ml.image) finalImage = ml.image;
-        if (!finalPrice && ml.price) finalPrice = ml.price;
+      const recovered = await resolveCloudflareBlockedProduct(
+        parsedUrl,
+        hostname
+      );
+      if (!finalTitle && recovered.title) finalTitle = recovered.title;
+      if (!finalDescription && recovered.description)
+        finalDescription = recovered.description;
+      if (!finalImage && recovered.image) finalImage = recovered.image;
+      if (!finalPrice && recovered.price) {
+        finalPrice = recovered.price;
+        finalCurrency = "GEL";
       }
     }
 
     // Clean up store suffixes in title
     finalTitle = finalTitle
       .replace(/^Amazon\.[a-z.]+\s*:\s*/i, "")
-      .replace(/\s*[|-]\s*(?:Zoommer|Veli\.store|Extra\.ge|Alta\.ge|Amazon).*$/i, "")
+      .replace(/^საუკეთესო ფასი\s*[│|-]\s*/i, "")
+      .replace(
+        /\s*[│|-]\s*(?:Zoommer|Veli\.store|Extra\.ge|Alta\.ge|alta\.ge|Amazon).*$/i,
+        ""
+      )
       .trim();
 
-    // Fallback readable title from URL slug ONLY if title is still empty
-    if (!finalTitle) {
-      const pathSegments = parsedUrl.pathname.split("/").filter(Boolean);
-      const dpIndex = pathSegments.findIndex(
-        (s) => s.toLowerCase() === "dp" || s.toLowerCase() === "gp"
-      );
-      const slugCandidate =
-        dpIndex > 0
-          ? pathSegments[dpIndex - 1]
-          : pathSegments[pathSegments.length - 1] || "";
-      finalTitle = decodeURIComponent(slugCandidate)
-        .replace(/[-_]/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase())
-        .trim();
+    if (!finalTitle || isBotOrErrorString(finalTitle)) {
+      const { readableTitle } = extractProductSlugQueries(parsedUrl);
+      finalTitle = readableTitle || hostname;
+    }
+
+    if (isBotOrErrorString(finalDescription)) {
+      finalDescription = "";
     }
 
     const conv = convertPriceToGel(finalPrice, finalCurrency);
