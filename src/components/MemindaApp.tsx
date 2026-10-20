@@ -6,11 +6,11 @@ import {
   Gift,
   Plus,
   Share2,
-  Globe,
   ExternalLink,
   Check,
   Sparkles,
   Users,
+  Eye,
   EyeOff,
   Upload,
   Link2,
@@ -24,6 +24,10 @@ import {
   FolderPlus,
   UserCheck,
   Lock,
+  ArrowLeft,
+  ArrowRight,
+  SlidersHorizontal,
+  Home,
 } from "lucide-react";
 import { TRANSLATIONS, Language } from "@/lib/meminda-data";
 import type { PublicUser } from "@/lib/auth";
@@ -31,8 +35,12 @@ import type { WishlistRecord, WishItemRecord } from "@/lib/db";
 
 const GUEST_TOKENS_STORAGE_KEY = "meminda_guest_cancel_tokens_v1";
 
+type PriceRangeFilter = "all" | "under100" | "100to300" | "300to700" | "over700";
+type SortOption = "newest" | "priceAsc" | "priceDesc";
+
 export default function MemindaApp() {
   const [lang, setLang] = useState<Language>("ka");
+  const [activePage, setActivePage] = useState<"home" | "wishlist">("home");
   const [currentUser, setCurrentUser] = useState<PublicUser | null>(null);
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [wishlists, setWishlists] = useState<WishlistRecord[]>([]);
@@ -42,10 +50,13 @@ export default function MemindaApp() {
   // Navigation & Active Selection State
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [selectedWishlistId, setSelectedWishlistId] = useState<string>("");
-  const [filter, setFilter] = useState<"all" | "available" | "reserved">("all");
-  const [spoilerFreeForOwner, setSpoilerFreeForOwner] = useState<boolean>(false);
 
-  // Guest cancel tokens stored in browser localStorage so unauthenticated guests can cancel their own reservations
+  // Filters & Sorting
+  const [statusFilter, setStatusFilter] = useState<"all" | "available" | "reserved">("all");
+  const [priceFilter, setPriceFilter] = useState<PriceRangeFilter>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("newest");
+
+  // Guest cancel tokens stored in browser localStorage
   const [guestCancelTokens, setGuestCancelTokens] = useState<Record<string, string>>({});
 
   // UI Feedback
@@ -91,11 +102,10 @@ export default function MemindaApp() {
     rateSource: string;
   } | null>(null);
 
-  // Reserve Gift Form State
+  // Reserve Gift Form State (Anonymous for all OR Named)
   const [reserveName, setReserveName] = useState("");
   const [reserveNote, setReserveNote] = useState("");
-  const [reserveHidePublic, setReserveHidePublic] = useState(false);
-  const [reserveHideOwner, setReserveHideOwner] = useState(false);
+  const [reserveIsAnonymousForAll, setReserveIsAnonymousForAll] = useState(false);
 
   const t = TRANSLATIONS[lang];
 
@@ -116,7 +126,6 @@ export default function MemindaApp() {
     }
   };
 
-  // Load guest cancel tokens from localStorage
   useEffect(() => {
     try {
       const saved = localStorage.getItem(GUEST_TOKENS_STORAGE_KEY);
@@ -138,56 +147,77 @@ export default function MemindaApp() {
     }
   };
 
-  const fetchAllData = useCallback(async (preferredUserId?: string, preferredWishlistId?: string) => {
-    try {
-      const res = await fetch("/api/wishlists", { cache: "no-store" });
-      const data = await res.json();
-      const loadedUsers: PublicUser[] = data.users || [];
-      const loadedWishlists: WishlistRecord[] = data.wishlists || [];
-      const loadedItems: WishItemRecord[] = data.items || [];
-      const loggedUser: PublicUser | null = data.currentUser || null;
+  const fetchAllData = useCallback(
+    async (
+      preferredUserId?: string,
+      preferredWishlistId?: string,
+      openWishlistView?: boolean
+    ) => {
+      try {
+        const res = await fetch("/api/wishlists", { cache: "no-store" });
+        const data = await res.json();
+        const loadedUsers: PublicUser[] = data.users || [];
+        const loadedWishlists: WishlistRecord[] = data.wishlists || [];
+        const loadedItems: WishItemRecord[] = data.items || [];
+        const loggedUser: PublicUser | null = data.currentUser || null;
 
-      setUsers(loadedUsers);
-      setWishlists(loadedWishlists);
-      setItems(loadedItems);
-      setCurrentUser(loggedUser);
+        setUsers(loadedUsers);
+        setWishlists(loadedWishlists);
+        setItems(loadedItems);
+        setCurrentUser(loggedUser);
 
-      // Check URL query parameters (?u=username&wl=slug)
-      const params = new URLSearchParams(window.location.search);
-      const urlUsername = params.get("u")?.toLowerCase();
-      const urlUser = urlUsername
-        ? loadedUsers.find((u) => u.username.toLowerCase() === urlUsername)
-        : undefined;
+        const params = new URLSearchParams(window.location.search);
+        const urlUsername = params.get("u")?.toLowerCase();
+        const urlUser = urlUsername
+          ? loadedUsers.find((u) => u.username.toLowerCase() === urlUsername)
+          : undefined;
 
-      const targetUserId =
-        preferredUserId ||
-        urlUser?.id ||
-        selectedUserId ||
-        loggedUser?.id ||
-        loadedUsers[0]?.id ||
-        "";
+        const targetUserId =
+          preferredUserId ||
+          urlUser?.id ||
+          selectedUserId ||
+          loggedUser?.id ||
+          loadedUsers[0]?.id ||
+          "";
 
-      setSelectedUserId(targetUserId);
+        setSelectedUserId(targetUserId);
 
-      const userWls = loadedWishlists.filter((w) => w.ownerId === targetUserId);
-      const targetWlId =
-        preferredWishlistId ||
-        (userWls.some((w) => w.id === selectedWishlistId)
-          ? selectedWishlistId
-          : userWls[0]?.id || "");
+        const userWls = loadedWishlists.filter((w) => w.ownerId === targetUserId);
+        const targetWlId =
+          preferredWishlistId ||
+          (userWls.some((w) => w.id === selectedWishlistId)
+            ? selectedWishlistId
+            : userWls[0]?.id || "");
 
-      setSelectedWishlistId(targetWlId);
-    } catch (e) {
-      console.error("Failed to fetch wishlists:", e);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedUserId, selectedWishlistId]);
+        setSelectedWishlistId(targetWlId);
+
+        if (openWishlistView || urlUser) {
+          setActivePage("wishlist");
+        }
+      } catch (e) {
+        console.error("Failed to fetch wishlists:", e);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [selectedUserId, selectedWishlistId]
+  );
 
   useEffect(() => {
     fetchAllData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Open a specific user's wishlist
+  const openUserWishlist = (userId: string, wishlistId?: string) => {
+    setSelectedUserId(userId);
+    const userWls = wishlists.filter((w) => w.ownerId === userId);
+    setSelectedWishlistId(wishlistId || userWls[0]?.id || "");
+    setStatusFilter("all");
+    setPriceFilter("all");
+    setActivePage("wishlist");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   // Currently viewed profile & wishlists
   const activeProfileUser =
@@ -208,22 +238,33 @@ export default function MemindaApp() {
   const reservedCount = wishlistItems.filter((i) => Boolean(i.reservation)).length;
   const availableCount = wishlistItems.length - reservedCount;
 
-  const filteredItems = wishlistItems.filter((item) => {
-    if (filter === "available") return !item.reservation;
-    if (filter === "reserved") return Boolean(item.reservation);
-    return true;
-  });
+  // Apply Status Filter, Price Filter, and Sort
+  const filteredItems = wishlistItems
+    .filter((item) => {
+      if (statusFilter === "available" && item.reservation) return false;
+      if (statusFilter === "reserved" && !item.reservation) return false;
 
-  // Switch active user profile
-  const handleSelectUser = (userId: string) => {
-    setSelectedUserId(userId);
-    const userWls = wishlists.filter((w) => w.ownerId === userId);
-    setSelectedWishlistId(userWls[0]?.id || "");
-    setFilter("all");
-  };
+      if (priceFilter === "under100" && item.price >= 100) return false;
+      if (priceFilter === "100to300" && (item.price < 100 || item.price > 300))
+        return false;
+      if (priceFilter === "300to700" && (item.price <= 300 || item.price > 700))
+        return false;
+      if (priceFilter === "over700" && item.price <= 700) return false;
+
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "priceAsc") return a.price - b.price;
+      if (sortBy === "priceDesc") return b.price - a.price;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
   // Auth Handlers
-  const handleLoginSubmit = async (e: React.FormEvent, quickIdent?: string, quickPass?: string) => {
+  const handleLoginSubmit = async (
+    e: React.FormEvent,
+    quickIdent?: string,
+    quickPass?: string
+  ) => {
     e.preventDefault();
     setAuthError(null);
     setIsSubmittingAuth(true);
@@ -244,7 +285,7 @@ export default function MemindaApp() {
       setAuthModalMode(null);
       setAuthIdentifier("");
       setAuthPassword("");
-      await fetchAllData(data.user.id);
+      await fetchAllData(data.user.id, undefined, true);
       showToast(
         lang === "ka"
           ? `👋 მოგესალმებით, ${data.user.name}!`
@@ -284,7 +325,7 @@ export default function MemindaApp() {
       setRegEmail("");
       setRegBio("");
       setAuthPassword("");
-      await fetchAllData(data.user.id, data.defaultWishlistId);
+      await fetchAllData(data.user.id, data.defaultWishlistId, true);
       triggerConfetti();
       showToast(
         lang === "ka"
@@ -325,7 +366,7 @@ export default function MemindaApp() {
       setWlTitle("");
       setWlDesc("");
       setWlDate("");
-      await fetchAllData(currentUser?.id, data.wishlist.id);
+      await fetchAllData(currentUser?.id, data.wishlist.id, true);
       showToast(
         lang === "ka"
           ? "✨ ახალი სურვილების სია შეიქმნა!"
@@ -334,7 +375,7 @@ export default function MemindaApp() {
     }
   };
 
-  // URL Auto-Scrape Handler (with TBC Bank currency conversion)
+  // URL Auto-Scrape Handler
   const handleAutoScrape = async (customUrl?: string) => {
     const targetUrl = customUrl ?? urlInput;
     if (!targetUrl.trim()) return;
@@ -415,7 +456,7 @@ export default function MemindaApp() {
       setNewImage("");
       setNewDesc("");
       setConversionInfo(null);
-      await fetchAllData(activeProfileUser?.id, activeWishlist.id);
+      await fetchAllData(activeProfileUser?.id, activeWishlist.id, true);
       showToast(
         lang === "ka"
           ? "✨ სურვილი წარმატებით დაემატა სიას!"
@@ -430,21 +471,25 @@ export default function MemindaApp() {
       method: "DELETE",
     });
     if (res.ok) {
-      await fetchAllData(activeProfileUser?.id, activeWishlist?.id);
+      await fetchAllData(activeProfileUser?.id, activeWishlist?.id, true);
       showToast(lang === "ka" ? "სურვილი წაიშალა" : "Wish item removed");
     }
   };
 
-  // Reserve Gift Submit (Works for BOTH Logged-in Users AND Unregistered Guests)
+  // Reserve Gift Submit (Named OR Anonymous for All)
   const handleReserveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeReserveItem) return;
 
-    const finalName = currentUser
+    const finalName = reserveIsAnonymousForAll
+      ? lang === "ka"
+        ? "ანონიმური"
+        : "Anonymous"
+      : currentUser
       ? reserveName.trim() || currentUser.name
       : reserveName.trim();
 
-    if (!finalName) return;
+    if (!finalName && !reserveIsAnonymousForAll) return;
 
     const res = await fetch("/api/items/reserve", {
       method: "POST",
@@ -453,8 +498,7 @@ export default function MemindaApp() {
         action: "reserve",
         itemId: activeReserveItem.id,
         reservedByName: finalName,
-        isAnonymousToPublic: reserveHidePublic,
-        hideFromOwnerSpoilerFree: reserveHideOwner,
+        isAnonymousForAll: reserveIsAnonymousForAll,
         note: reserveNote,
       }),
     });
@@ -467,9 +511,8 @@ export default function MemindaApp() {
       setActiveReserveItem(null);
       setReserveName("");
       setReserveNote("");
-      setReserveHidePublic(false);
-      setReserveHideOwner(false);
-      await fetchAllData(activeProfileUser?.id, activeWishlist?.id);
+      setReserveIsAnonymousForAll(false);
+      await fetchAllData(activeProfileUser?.id, activeWishlist?.id, true);
       triggerConfetti();
       showToast(
         lang === "ka"
@@ -496,7 +539,7 @@ export default function MemindaApp() {
 
     const data = await res.json();
     if (res.ok) {
-      await fetchAllData(activeProfileUser?.id, activeWishlist?.id);
+      await fetchAllData(activeProfileUser?.id, activeWishlist?.id, true);
       showToast(lang === "ka" ? "ჯავშანი გაუქმდა" : "Reservation cancelled");
     } else {
       showToast(data.error || "Cannot unreserve");
@@ -518,21 +561,12 @@ export default function MemindaApp() {
     return false;
   };
 
-  // Format reservation display name respecting privacy & owner spoiler settings
+  // Format reservation display name: Anonymous for ALL hides name from everyone (owner & guests)
   const getReservationDisplayName = (item: WishItemRecord): string => {
     const r = item.reservation;
     if (!r) return "";
-    if (
-      (currentUser && r.reservedByUserId === currentUser.id) ||
-      guestCancelTokens[item.id]
-    ) {
-      return `${r.reservedByName} (${lang === "ka" ? "თქვენ" : "You"})`;
-    }
-    if (isViewingOwnWishlist && (r.hideFromOwnerSpoilerFree || spoilerFreeForOwner)) {
-      return t.spoilerHiddenForOwner;
-    }
-    if (!isViewingOwnWishlist && r.isAnonymousToPublic) {
-      return t.anonymousFriend;
+    if (r.isAnonymousToPublic || r.hideFromOwnerSpoilerFree) {
+      return t.anonymousForAllText;
     }
     return r.reservedByName;
   };
@@ -555,115 +589,62 @@ export default function MemindaApp() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-slate-900 pb-24">
+    <div className="min-h-screen bg-[#FAF8F5] text-slate-900 pb-20">
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-slate-900 px-5 py-4 text-sm font-medium text-white shadow-2xl border border-slate-700 animate-bounce">
-          <Sparkles className="h-5 w-5 text-amber-400 shrink-0" />
-          <span>{toastMessage}</span>
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 flex items-center gap-3 rounded-2xl bg-slate-900 px-4 py-3.5 text-xs sm:text-sm font-medium text-white shadow-2xl border border-slate-700">
+          <Sparkles className="h-4 w-4 text-amber-400 shrink-0" />
+          <span className="truncate">{toastMessage}</span>
         </div>
       )}
 
-      {/* Top Community & Language Switcher Bar */}
-      <div className="bg-slate-900 text-white text-xs py-2.5 px-4 border-b border-slate-800">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          {/* Directory of Users to Browse */}
-          <div className="flex items-center gap-2 overflow-x-auto py-0.5">
-            <span className="text-slate-400 font-medium flex items-center gap-1.5 shrink-0">
-              <Users className="h-3.5 w-3.5 text-rose-400" />
-              <span>{t.exploreUsersTitle}:</span>
-            </span>
-            <div className="flex items-center gap-1.5">
-              {users.map((u) => {
-                const isSelected = u.id === activeProfileUser?.id;
-                const isMe = currentUser?.id === u.id;
-                return (
-                  <button
-                    key={u.id}
-                    onClick={() => handleSelectUser(u.id)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer shrink-0 ${
-                      isSelected
-                        ? "bg-rose-600 text-white shadow"
-                        : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
-                    }`}
-                  >
-                    <img
-                      src={u.avatarUrl}
-                      alt={u.name}
-                      className="h-4 w-4 rounded-full object-cover"
-                    />
-                    <span>{u.name}</span>
-                    {isMe && (
-                      <span className="text-[10px] bg-white/20 px-1.5 rounded">
-                        {lang === "ka" ? "მე" : "Me"}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Language Switcher */}
-          <div className="flex items-center gap-2 shrink-0">
-            <Globe className="h-3.5 w-3.5 text-slate-400" />
+      {/* ========================================================= */}
+      {/* MOBILE-FRIENDLY STICKY HEADER                             */}
+      {/* ========================================================= */}
+      <header className="sticky top-0 z-30 backdrop-blur-md bg-white/95 border-b border-slate-200/80">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
+          {/* Brand Logo -> Navigates to Main Landing Page */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
-              onClick={() => setLang("ka")}
-              className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer ${
-                lang === "ka"
-                  ? "bg-white text-slate-900"
-                  : "text-slate-400 hover:text-white"
-              }`}
+              onClick={() => setActivePage("home")}
+              className="flex items-center gap-2 sm:gap-2.5 text-left cursor-pointer group min-w-0"
             >
-              🇬🇪 ქართული
-            </button>
-            <button
-              onClick={() => setLang("en")}
-              className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer ${
-                lang === "en"
-                  ? "bg-white text-slate-900"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              🇬🇧 English
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Navigation Header */}
-      <header className="sticky top-0 z-30 backdrop-blur-md bg-white/90 border-b border-slate-200/80">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between gap-4 py-3.5">
-          <div
-            onClick={() => {
-              if (currentUser) handleSelectUser(currentUser.id);
-            }}
-            className="flex items-center gap-3 cursor-pointer"
-          >
-            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-rose-600 via-pink-600 to-amber-500 flex items-center justify-center text-white shadow-md shadow-rose-500/20">
-              <Gift className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-black tracking-tight bg-gradient-to-r from-rose-600 to-indigo-700 bg-clip-text text-transparent">
-                  meminda
-                </span>
-                <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
-                  მემინდა
-                </span>
+              <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-gradient-to-br from-rose-600 via-pink-600 to-amber-500 flex items-center justify-center text-white shadow-sm shrink-0">
+                <Gift className="h-5 w-5" />
               </div>
-              <p className="text-xs text-slate-500 hidden sm:block">{t.brandSub}</p>
-            </div>
+              <div className="truncate">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-rose-600 to-indigo-700 bg-clip-text text-transparent">
+                    meminda
+                  </span>
+                  <span className="hidden xs:inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                    მემინდა
+                  </span>
+                </div>
+              </div>
+            </button>
           </div>
 
-          {/* Right Auth & Action Controls */}
-          <div className="flex items-center gap-2.5">
+          {/* Right Navigation Actions (Compact on Mobile) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Home Button when inside Wishlist View */}
+            {activePage === "wishlist" && (
+              <button
+                onClick={() => setActivePage("home")}
+                className="inline-flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-2 text-xs font-bold transition cursor-pointer"
+                title={t.homeNav}
+              >
+                <Home className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{t.homeNav}</span>
+              </button>
+            )}
+
             {currentUser ? (
               <>
                 <button
-                  onClick={() => handleSelectUser(currentUser.id)}
-                  className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold transition cursor-pointer ${
-                    isViewingOwnWishlist
+                  onClick={() => openUserWishlist(currentUser.id)}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-bold transition cursor-pointer ${
+                    activePage === "wishlist" && isViewingOwnWishlist
                       ? "bg-slate-900 text-white"
                       : "bg-slate-100 hover:bg-slate-200 text-slate-800"
                   }`}
@@ -671,39 +652,29 @@ export default function MemindaApp() {
                   <img
                     src={currentUser.avatarUrl}
                     alt={currentUser.name}
-                    className="h-5 w-5 rounded-full object-cover"
+                    className="h-5 w-5 rounded-full object-cover shrink-0"
                   />
-                  <span className="hidden sm:inline">{currentUser.name}</span>
+                  <span className="max-w-[90px] sm:max-w-[140px] truncate">
+                    {t.myWishlistsTab}
+                  </span>
                 </button>
 
-                <button
-                  onClick={() => {
-                    handleSelectUser(currentUser.id);
-                    setIsNewWishlistModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 px-3.5 py-2 text-xs sm:text-sm font-bold transition cursor-pointer"
-                >
-                  <FolderPlus className="h-4 w-4 text-indigo-600" />
-                  <span className="hidden md:inline">{t.createWishlistBtn}</span>
-                </button>
-
-                {isViewingOwnWishlist && activeWishlist && (
+                {activePage === "wishlist" && isViewingOwnWishlist && activeWishlist && (
                   <button
                     onClick={() => setIsAddItemModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 text-xs sm:text-sm font-bold shadow-md shadow-rose-600/20 transition cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-2.5 sm:px-3.5 py-2 text-xs font-bold shadow-sm transition cursor-pointer"
                   >
-                    <Plus className="h-4 w-4" />
-                    <span>{t.addGiftBtn}</span>
+                    <Plus className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{t.addGiftBtn}</span>
                   </button>
                 )}
 
                 <button
                   onClick={handleLogout}
                   title={t.logoutBtn}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 px-3 py-2 text-xs font-semibold transition cursor-pointer"
+                  className="inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 p-2 text-xs font-semibold transition cursor-pointer"
                 >
                   <LogOut className="h-4 w-4" />
-                  <span className="hidden lg:inline">{t.logoutBtn}</span>
                 </button>
               </>
             ) : (
@@ -713,9 +684,9 @@ export default function MemindaApp() {
                     setAuthError(null);
                     setAuthModalMode("login");
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 px-3.5 py-2 text-xs sm:text-sm font-bold transition cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 px-2.5 sm:px-3.5 py-2 text-xs font-bold transition cursor-pointer"
                 >
-                  <LogIn className="h-4 w-4" />
+                  <LogIn className="h-3.5 w-3.5" />
                   <span>{t.loginBtn}</span>
                 </button>
 
@@ -724,121 +695,392 @@ export default function MemindaApp() {
                     setAuthError(null);
                     setAuthModalMode("register");
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 text-xs sm:text-sm font-bold shadow-md shadow-rose-600/20 transition cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-2.5 sm:px-3.5 py-2 text-xs font-bold shadow-sm transition cursor-pointer"
                 >
-                  <UserPlus className="h-4 w-4" />
+                  <UserPlus className="h-3.5 w-3.5 hidden sm:inline" />
                   <span>{t.registerBtn}</span>
                 </button>
               </>
             )}
 
-            <button
-              onClick={() => {
-                const shareUrl = activeProfileUser
-                  ? `${window.location.origin}/?u=${activeProfileUser.username}`
-                  : window.location.href;
-                navigator.clipboard?.writeText(shareUrl);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2500);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 px-3.5 py-2 text-xs sm:text-sm font-medium transition cursor-pointer"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-4 w-4 text-emerald-600" />
-                  <span className="text-emerald-700 font-semibold">{t.copiedLink}</span>
-                </>
-              ) : (
-                <>
-                  <Share2 className="h-4 w-4" />
-                  <span className="hidden sm:inline">{t.shareBtn}</span>
-                </>
-              )}
-            </button>
+            {/* Compact Language Toggle */}
+            <div className="inline-flex rounded-xl bg-slate-100 p-0.5 border border-slate-200">
+              <button
+                onClick={() => setLang("ka")}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  lang === "ka"
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-500 hover:text-slate-900"
+                }`}
+              >
+                ქარ
+              </button>
+              <button
+                onClick={() => setLang("en")}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  lang === "en"
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-500 hover:text-slate-900"
+                }`}
+              >
+                EN
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Hero Profile & Wishlists Switcher Banner */}
-      {activeProfileUser && (
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-8">
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-rose-950 text-white p-6 sm:p-10 shadow-xl">
-            <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
-                <img
-                  src={activeProfileUser.avatarUrl}
-                  alt={activeProfileUser.name}
-                  className="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-cover ring-4 ring-white/20 shadow-lg"
-                />
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <span className="rounded-full bg-white/15 backdrop-blur px-3 py-0.5 text-xs font-semibold text-rose-200">
-                      @{activeProfileUser.username}
-                    </span>
-                    {isViewingOwnWishlist && (
-                      <span className="rounded-full bg-emerald-500/20 border border-emerald-400/30 px-3 py-0.5 text-xs font-bold text-emerald-300">
-                        👑 {t.ownerBadge}
-                      </span>
-                    )}
-                    {activeWishlist && (
-                      <span className="rounded-full bg-amber-400/20 px-3 py-0.5 text-xs font-semibold text-amber-200">
-                        {occasionBadge(activeWishlist.occasion)}
-                      </span>
-                    )}
-                  </div>
+      {/* ========================================================= */}
+      {/* VIEW 1: MAIN LANDING PAGE                                 */}
+      {/* ========================================================= */}
+      {activePage === "home" && (
+        <div className="space-y-12 sm:space-y-16">
+          {/* Hero Section */}
+          <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-rose-950 text-white px-5 py-10 sm:p-12 md:p-16 shadow-xl">
+              <div className="max-w-2xl relative z-10">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 backdrop-blur px-3.5 py-1 text-xs font-bold text-amber-300 border border-white/15">
+                  {t.heroBadge}
+                </span>
 
-                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                    {activeWishlist ? activeWishlist.title : activeProfileUser.name}
-                  </h1>
-                  <p className="mt-1.5 text-sm sm:text-base text-slate-200 max-w-2xl leading-relaxed">
-                    {activeWishlist
-                      ? activeWishlist.description
-                      : lang === "ka"
-                      ? activeProfileUser.bioKa
-                      : activeProfileUser.bioEn}
-                  </p>
-                </div>
-              </div>
+                <h1 className="mt-5 text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight">
+                  {t.heroTitleLine1}{" "}
+                  <span className="bg-gradient-to-r from-rose-400 via-pink-300 to-amber-300 bg-clip-text text-transparent">
+                    {t.heroTitleLine2}
+                  </span>
+                </h1>
 
-              {/* Wishlist Counters */}
-              <div className="grid grid-cols-3 gap-2.5 w-full md:w-auto shrink-0">
-                <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 px-4 py-3 text-center">
-                  <p className="text-[11px] text-slate-300">{t.totalWishes}</p>
-                  <p className="text-2xl font-black text-white mt-0.5">
-                    {wishlistItems.length}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 px-4 py-3 text-center">
-                  <p className="text-[11px] text-slate-300">{t.availableWishes}</p>
-                  <p className="text-2xl font-black text-amber-300 mt-0.5">
-                    {availableCount}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 px-4 py-3 text-center">
-                  <p className="text-[11px] text-slate-300">{t.reservedGiftsCount}</p>
-                  <p className="text-2xl font-black text-emerald-300 mt-0.5">
-                    {reservedCount}
-                  </p>
+                <p className="mt-4 text-sm sm:text-base md:text-lg text-slate-200 leading-relaxed">
+                  {t.heroSubtitle}
+                </p>
+
+                <div className="mt-7 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  {currentUser ? (
+                    <button
+                      onClick={() => openUserWishlist(currentUser.id)}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white px-6 py-3.5 text-sm sm:text-base font-extrabold shadow-lg shadow-rose-600/30 transition cursor-pointer"
+                    >
+                      <Gift className="h-5 w-5" />
+                      <span>{t.heroGoToMyProfile}</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setAuthError(null);
+                        setAuthModalMode("register");
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white px-6 py-3.5 text-sm sm:text-base font-extrabold shadow-lg shadow-rose-600/30 transition cursor-pointer"
+                    >
+                      <Sparkles className="h-5 w-5" />
+                      <span>{t.heroPrimaryCta}</span>
+                    </button>
+                  )}
+
+                  <a
+                    href="#explore-wishlists"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 text-sm sm:text-base font-bold transition"
+                  >
+                    <Users className="h-4 w-4" />
+                    <span>{t.heroSecondaryCta}</span>
+                  </a>
                 </div>
               </div>
             </div>
+          </section>
 
-            {/* Multiple Wishlists Tabs for This User */}
-            <div className="mt-6 pt-5 border-t border-white/15 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
+          {/* How It Works (3 Mobile-Friendly Cards) */}
+          <section className="max-w-6xl mx-auto px-4 sm:px-6">
+            <div className="text-center max-w-xl mx-auto mb-8">
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+                {t.howItWorksTitle}
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                {t.howItWorksSub}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+              {[
+                {
+                  icon: <Link2 className="h-6 w-6 text-rose-600" />,
+                  bg: "bg-rose-50 border-rose-100",
+                  title: t.step1Title,
+                  desc: t.step1Desc,
+                },
+                {
+                  icon: <Share2 className="h-6 w-6 text-indigo-600" />,
+                  bg: "bg-indigo-50 border-indigo-100",
+                  title: t.step2Title,
+                  desc: t.step2Desc,
+                },
+                {
+                  icon: <Gift className="h-6 w-6 text-emerald-600" />,
+                  bg: "bg-emerald-50 border-emerald-100",
+                  title: t.step3Title,
+                  desc: t.step3Desc,
+                },
+              ].map((step, idx) => (
+                <div
+                  key={idx}
+                  className="rounded-3xl bg-white border border-slate-200/90 p-5 sm:p-6 shadow-xs"
+                >
+                  <div
+                    className={`h-12 w-12 rounded-2xl border ${step.bg} flex items-center justify-center mb-4`}
+                  >
+                    {step.icon}
+                  </div>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    {step.title}
+                  </h3>
+                  <p className="mt-2 text-xs sm:text-sm text-slate-600 leading-relaxed">
+                    {step.desc}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Featured / Public Wishlists Directory */}
+          <section id="explore-wishlists" className="max-w-6xl mx-auto px-4 sm:px-6">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+                  {t.featuredWishlistsTitle}
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                  {t.featuredWishlistsSub}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {wishlists.map((wl) => {
+                const owner = users.find((u) => u.id === wl.ownerId);
+                const wlItems = items.filter((i) => i.wishlistId === wl.id);
+                const wlReserved = wlItems.filter((i) => Boolean(i.reservation)).length;
+                const previewImages = wlItems.slice(0, 3).map((i) => i.imageUrl);
+
+                return (
+                  <div
+                    key={wl.id}
+                    onClick={() => openUserWishlist(wl.ownerId, wl.id)}
+                    className="group rounded-3xl bg-white border border-slate-200/90 p-5 shadow-xs hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between"
+                  >
+                    <div>
+                      {/* Owner Header */}
+                      <div className="flex items-center justify-between gap-2 mb-4">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {owner && (
+                            <img
+                              src={owner.avatarUrl}
+                              alt={owner.name}
+                              className="h-10 w-10 rounded-full object-cover ring-2 ring-rose-100 shrink-0"
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-900 truncate">
+                              {owner?.name}
+                            </p>
+                            <p className="text-xs text-slate-400 truncate">
+                              @{owner?.username}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className="rounded-full bg-rose-50 text-rose-700 border border-rose-200/60 px-2.5 py-1 text-[11px] font-bold shrink-0">
+                          {occasionBadge(wl.occasion)}
+                        </span>
+                      </div>
+
+                      {/* Wishlist Title & Description */}
+                      <h3 className="text-base sm:text-lg font-extrabold text-slate-900 group-hover:text-rose-600 transition line-clamp-1">
+                        {wl.title}
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-500 line-clamp-2">
+                        {wl.description}
+                      </p>
+
+                      {/* Mini Product Image Thumbnails */}
+                      {previewImages.length > 0 && (
+                        <div className="mt-4 grid grid-cols-3 gap-2">
+                          {previewImages.map((imgUrl, i) => (
+                            <div
+                              key={i}
+                              className="h-20 rounded-xl bg-slate-100 overflow-hidden"
+                            >
+                              <img
+                                src={imgUrl}
+                                alt=""
+                                className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-600">
+                        🎁 {wlItems.length} {t.itemsCountSuffix} ({wlReserved}{" "}
+                        {t.reservedGiftsCount})
+                      </span>
+                      <span className="inline-flex items-center gap-1 font-extrabold text-rose-600 group-hover:translate-x-0.5 transition-transform">
+                        <span>{t.viewWishlistBtn}</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* VIEW 2: WISHLIST PROFILE & ITEMS PAGE                     */}
+      {/* ========================================================= */}
+      {activePage === "wishlist" && activeProfileUser && (
+        <div>
+          {/* Top Sub-bar: Back to Home + Quick User Switcher */}
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4 flex items-center justify-between gap-2">
+            <button
+              onClick={() => setActivePage("home")}
+              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>{t.backToHome}</span>
+            </button>
+
+            {/* Horizontal scrollable user pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto max-w-[65%] sm:max-w-none py-1 no-scrollbar">
+              {users.map((u) => {
+                const isSelected = u.id === activeProfileUser.id;
+                return (
+                  <button
+                    key={u.id}
+                    onClick={() => openUserWishlist(u.id)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition cursor-pointer shrink-0 ${
+                      isSelected
+                        ? "bg-slate-900 text-white"
+                        : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    <img
+                      src={u.avatarUrl}
+                      alt={u.name}
+                      className="h-4 w-4 rounded-full object-cover"
+                    />
+                    <span className="truncate max-w-[90px]">{u.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Profile Hero Banner */}
+          <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-3">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-rose-950 text-white p-5 sm:p-8 shadow-lg">
+              <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+                <div className="flex items-center gap-4">
+                  <img
+                    src={activeProfileUser.avatarUrl}
+                    alt={activeProfileUser.name}
+                    className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl object-cover ring-2 ring-white/25 shadow-md shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                      <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold text-rose-200">
+                        @{activeProfileUser.username}
+                      </span>
+                      {isViewingOwnWishlist && (
+                        <span className="rounded-full bg-emerald-500/20 border border-emerald-400/30 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300">
+                          👑 {t.ownerBadge}
+                        </span>
+                      )}
+                      {activeWishlist && (
+                        <span className="rounded-full bg-amber-400/20 px-2.5 py-0.5 text-[11px] font-semibold text-amber-200">
+                          {occasionBadge(activeWishlist.occasion)}
+                        </span>
+                      )}
+                    </div>
+
+                    <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight leading-snug">
+                      {activeWishlist ? activeWishlist.title : activeProfileUser.name}
+                    </h1>
+                    <p className="mt-1 text-xs sm:text-sm text-slate-200 max-w-2xl line-clamp-2">
+                      {activeWishlist
+                        ? activeWishlist.description
+                        : lang === "ka"
+                        ? activeProfileUser.bioKa
+                        : activeProfileUser.bioEn}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Stats + Share Button */}
+                <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto pt-3 md:pt-0 border-t border-white/10 md:border-none">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-xl bg-white/10 px-3 py-2 text-center">
+                      <p className="text-[10px] text-slate-300">{t.totalWishes}</p>
+                      <p className="text-base sm:text-xl font-black text-white">
+                        {wishlistItems.length}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-white/10 px-3 py-2 text-center">
+                      <p className="text-[10px] text-slate-300">{t.availableWishes}</p>
+                      <p className="text-base sm:text-xl font-black text-amber-300">
+                        {availableCount}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-white/10 px-3 py-2 text-center">
+                      <p className="text-[10px] text-slate-300">{t.reservedGiftsCount}</p>
+                      <p className="text-base sm:text-xl font-black text-emerald-300">
+                        {reservedCount}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const shareUrl = `${window.location.origin}/?u=${activeProfileUser.username}`;
+                      navigator.clipboard?.writeText(shareUrl);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2500);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-white text-slate-900 hover:bg-rose-50 px-3.5 py-2.5 text-xs font-extrabold shadow-sm transition cursor-pointer shrink-0"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-4 w-4 text-emerald-600" />
+                        <span className="text-emerald-700">{t.copiedLink}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Share2 className="h-4 w-4 text-rose-600" />
+                        <span>{t.shareBtn}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Multiple Wishlists Tabs (Horizontal Scroll on Mobile) */}
+              <div className="mt-5 pt-4 border-t border-white/15 flex items-center gap-2 overflow-x-auto no-scrollbar">
                 {profileWishlists.map((wl) => (
                   <button
                     key={wl.id}
                     onClick={() => setSelectedWishlistId(wl.id)}
-                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold transition cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer shrink-0 ${
                       wl.id === activeWishlist?.id
-                        ? "bg-white text-slate-900 shadow-md"
+                        ? "bg-white text-slate-900 shadow-sm"
                         : "bg-white/10 text-slate-200 hover:bg-white/20"
                     }`}
                   >
                     <span>{wl.title}</span>
                     {wl.eventDate && (
-                      <span className="text-[11px] opacity-75 flex items-center gap-1">
+                      <span className="text-[10px] opacity-75 hidden sm:inline-flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
                         {wl.eventDate}
                       </span>
@@ -847,288 +1089,335 @@ export default function MemindaApp() {
                 ))}
 
                 {isViewingOwnWishlist && (
+                  <>
+                    <button
+                      onClick={() => setIsNewWishlistModalOpen(true)}
+                      className="inline-flex items-center gap-1 rounded-xl bg-white/15 hover:bg-white/25 text-white px-3 py-2 text-xs font-bold transition cursor-pointer shrink-0"
+                    >
+                      <FolderPlus className="h-3.5 w-3.5" />
+                      <span>{t.createWishlistBtn}</span>
+                    </button>
+                    {activeWishlist && (
+                      <button
+                        onClick={() => setIsAddItemModalOpen(true)}
+                        className="inline-flex items-center gap-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-2 text-xs font-bold shadow-sm transition cursor-pointer shrink-0"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>{t.addGiftBtn}</span>
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* ========================================================= */}
+          {/* STATUS FILTER + PRICE FILTER BAR (MOBILE OPTIMIZED)       */}
+          {/* ========================================================= */}
+          <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-5 space-y-3">
+            {/* Row 1: Availability Tabs & Sort Dropdown */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                {(
+                  [
+                    { id: "all", label: t.allItems, count: wishlistItems.length },
+                    { id: "available", label: t.availableFilter, count: availableCount },
+                    { id: "reserved", label: t.reservedFilter, count: reservedCount },
+                  ] as const
+                ).map((tab) => (
                   <button
-                    onClick={() => setIsNewWishlistModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-200 px-3.5 py-2 text-xs font-bold transition cursor-pointer"
+                    key={tab.id}
+                    onClick={() => setStatusFilter(tab.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold transition cursor-pointer shrink-0 ${
+                      statusFilter === tab.id
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                    }`}
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>{t.createWishlistBtn}</span>
+                    <span>{tab.label}</span>
+                    <span
+                      className={`text-[11px] px-1.5 py-0.2 rounded-full ${
+                        statusFilter === tab.id
+                          ? "bg-white/20 text-white"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Sort Select */}
+              <div className="flex items-center gap-2 ml-auto">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as SortOption)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer"
+                >
+                  <option value="newest">{t.sortDefault}</option>
+                  <option value="priceAsc">{t.sortPriceAsc}</option>
+                  <option value="priceDesc">{t.sortPriceDesc}</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Row 2: Price Range Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 mr-1 shrink-0">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-rose-500" />
+                <span>{t.priceFilterLabel}</span>
+              </span>
+
+              {(
+                [
+                  { id: "all", label: t.priceAll },
+                  { id: "under100", label: t.priceUnder100 },
+                  { id: "100to300", label: t.price100to300 },
+                  { id: "300to700", label: t.price300to700 },
+                  { id: "over700", label: t.priceOver700 },
+                ] as const
+              ).map((pf) => (
+                <button
+                  key={pf.id}
+                  onClick={() => setPriceFilter(pf.id)}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer shrink-0 ${
+                    priceFilter === pf.id
+                      ? "bg-rose-600 text-white shadow-xs"
+                      : "bg-white text-slate-600 hover:bg-rose-50 border border-slate-200"
+                  }`}
+                >
+                  {pf.label}
+                </button>
+              ))}
+            </div>
+
+            {!isViewingOwnWishlist && (
+              <div className="text-xs font-medium text-indigo-900 bg-indigo-50/90 border border-indigo-200/80 rounded-2xl px-3.5 py-2.5 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-indigo-600 shrink-0" />
+                <span>{t.guestHintBanner}</span>
+              </div>
+            )}
+          </section>
+
+          {/* Wishlist Items Grid */}
+          <main className="max-w-6xl mx-auto px-4 sm:px-6 mt-5">
+            {isLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {[1, 2, 3].map((n) => (
+                  <div
+                    key={n}
+                    className="h-88 rounded-3xl bg-white border border-slate-200 p-5 animate-pulse"
+                  />
+                ))}
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="rounded-3xl bg-white border border-slate-200 p-10 text-center">
+                <Gift className="h-10 w-10 text-rose-400 mx-auto mb-2.5" />
+                <h3 className="text-base font-bold text-slate-800">
+                  {t.noItemsInWishlist}
+                </h3>
+                {(statusFilter !== "all" || priceFilter !== "all") && (
+                  <button
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setPriceFilter("all");
+                    }}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 px-4 py-2 text-xs font-bold transition cursor-pointer"
+                  >
+                    {t.clearFiltersBtn}
                   </button>
                 )}
               </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredItems.map((item) => {
+                  const isReserved = Boolean(item.reservation);
+                  const canUnreserve = canVisitorUnreserve(item);
 
-              {isViewingOwnWishlist && (
-                <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={spoilerFreeForOwner}
-                    onChange={(e) => setSpoilerFreeForOwner(e.target.checked)}
-                    className="rounded text-rose-600 focus:ring-rose-500"
-                  />
-                  <span>🤫 {t.spoilerModeToggle}</span>
-                </label>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
+                  return (
+                    <div
+                      key={item.id}
+                      className={`group bg-white rounded-3xl border transition-all duration-200 overflow-hidden flex flex-col justify-between ${
+                        isReserved
+                          ? "border-indigo-200/90 bg-slate-50/40"
+                          : "border-slate-200/90 shadow-xs hover:shadow-xl"
+                      }`}
+                    >
+                      <div>
+                        {/* Product Image Header */}
+                        <div className="relative h-52 sm:h-56 w-full bg-slate-100 overflow-hidden">
+                          <img
+                            src={item.imageUrl}
+                            alt={item.title}
+                            className={`h-full w-full object-cover group-hover:scale-105 transition-transform duration-500 ${
+                              isReserved ? "opacity-85" : ""
+                            }`}
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/20" />
 
-      {/* Filter Bar & Guest Friendly Reservation Hint */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            {(
-              [
-                { id: "all", label: t.allItems, count: wishlistItems.length },
-                { id: "available", label: t.availableFilter, count: availableCount },
-                { id: "reserved", label: t.reservedFilter, count: reservedCount },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setFilter(tab.id)}
-                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition cursor-pointer ${
-                  filter === tab.id
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full ${
-                    filter === tab.id
-                      ? "bg-white/20 text-white"
-                      : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {tab.count}
-                </span>
-              </button>
-            ))}
-          </div>
+                          {/* Priority & Store Badges */}
+                          <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold backdrop-blur-md shadow-xs ${
+                                item.priority === "high"
+                                  ? "bg-rose-600/90 text-white"
+                                  : item.priority === "medium"
+                                  ? "bg-amber-500/90 text-white"
+                                  : "bg-slate-800/80 text-white"
+                              }`}
+                            >
+                              {item.priority === "high"
+                                ? t.priorityHigh
+                                : item.priority === "medium"
+                                ? t.priorityMedium
+                                : t.priorityLow}
+                            </span>
 
-          {!isViewingOwnWishlist && (
-            <div className="text-xs font-medium text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-xl px-3.5 py-2 flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-indigo-600 shrink-0" />
-              <span>{t.guestHintBanner}</span>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Wishlist Items Grid */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 mt-6">
-        {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map((n) => (
-              <div
-                key={n}
-                className="h-96 rounded-3xl bg-white border border-slate-200 p-6 animate-pulse"
-              />
-            ))}
-          </div>
-        ) : filteredItems.length === 0 ? (
-          <div className="rounded-3xl bg-white border border-slate-200 p-12 text-center">
-            <Gift className="h-12 w-12 text-rose-400 mx-auto mb-3" />
-            <h3 className="text-lg font-bold text-slate-800">{t.noItemsInWishlist}</h3>
-            {isViewingOwnWishlist && (
-              <button
-                onClick={() => setIsAddItemModalOpen(true)}
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-5 py-2.5 text-sm font-bold shadow-md transition cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                <span>{t.addGiftBtn}</span>
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredItems.map((item) => {
-              const isReserved = Boolean(item.reservation);
-              const canUnreserve = canVisitorUnreserve(item);
-
-              return (
-                <div
-                  key={item.id}
-                  className={`group bg-white rounded-3xl border transition-all duration-200 overflow-hidden flex flex-col justify-between ${
-                    isReserved
-                      ? "border-indigo-200/90 bg-slate-50/40"
-                      : "border-slate-200/90 shadow-sm hover:shadow-xl"
-                  }`}
-                >
-                  <div>
-                    {/* Product Image Header */}
-                    <div className="relative h-56 w-full bg-slate-100 overflow-hidden">
-                      <img
-                        src={item.imageUrl}
-                        alt={item.title}
-                        className={`h-full w-full object-cover group-hover:scale-105 transition-transform duration-500 ${
-                          isReserved ? "opacity-85" : ""
-                        }`}
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/20" />
-
-                      {/* Priority & Store Badges */}
-                      <div className="absolute top-3.5 left-3.5 flex flex-wrap gap-1.5">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold backdrop-blur-md shadow-sm ${
-                            item.priority === "high"
-                              ? "bg-rose-600/90 text-white"
-                              : item.priority === "medium"
-                              ? "bg-amber-500/90 text-white"
-                              : "bg-slate-800/80 text-white"
-                          }`}
-                        >
-                          {item.priority === "high"
-                            ? t.priorityHigh
-                            : item.priority === "medium"
-                            ? t.priorityMedium
-                            : t.priorityLow}
-                        </span>
-
-                        {item.storeName && (
-                          <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/90 text-slate-800 backdrop-blur-md shadow-sm">
-                            🛍️ {item.storeName}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Reserved Badge & Owner Delete */}
-                      <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
-                        {isReserved && (
-                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-600 text-white shadow-md">
-                            {t.reservedBadge}
-                          </span>
-                        )}
-                        {isViewingOwnWishlist && (
-                          <button
-                            onClick={() => handleDeleteItem(item.id)}
-                            title={t.deleteItemConfirm}
-                            className="h-8 w-8 rounded-full bg-black/50 hover:bg-rose-600 text-white flex items-center justify-center transition cursor-pointer"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Price & Store Link on Image Bottom */}
-                      <div className="absolute bottom-3.5 left-4 right-4 flex items-end justify-between text-white">
-                        <div>
-                          <span className="text-[11px] uppercase tracking-wider text-slate-200 font-medium block">
-                            {t.giftPriceLabel}
-                          </span>
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-2xl font-black">{item.price} ₾</span>
-                            {item.originalCurrency &&
-                              item.originalCurrency !== "GEL" &&
-                              item.originalPrice && (
-                                <span className="text-xs text-slate-200 font-medium">
-                                  ({item.originalPrice} {item.originalCurrency})
-                                </span>
-                              )}
+                            {item.storeName && (
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/90 text-slate-800 backdrop-blur-md shadow-xs">
+                                🛍️ {item.storeName}
+                              </span>
+                            )}
                           </div>
-                        </div>
 
-                        {item.productUrl && (
-                          <a
-                            href={item.productUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md px-3 py-1.5 text-xs font-semibold text-white transition"
-                          >
-                            <span>{t.viewProductLink}</span>
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        )}
-                      </div>
-                    </div>
+                          {/* Reserved Badge & Owner Delete */}
+                          <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                            {isReserved && (
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-600 text-white shadow-sm">
+                                {t.reservedBadge}
+                              </span>
+                            )}
+                            {isViewingOwnWishlist && (
+                              <button
+                                onClick={() => handleDeleteItem(item.id)}
+                                title={t.deleteItemConfirm}
+                                className="h-8 w-8 rounded-full bg-black/50 hover:bg-rose-600 text-white flex items-center justify-center transition cursor-pointer"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
 
-                    {/* Item Title & Description */}
-                    <div className="p-5">
-                      <h3 className="text-base font-bold text-slate-900 leading-snug line-clamp-2">
-                        {item.title}
-                      </h3>
-                      <p className="mt-1.5 text-xs sm:text-sm text-slate-600 line-clamp-3">
-                        {item.description}
-                      </p>
-
-                      {/* Reservation Details Box */}
-                      {item.reservation && (
-                        <div className="mt-4 rounded-2xl bg-indigo-50/90 border border-indigo-200 p-3.5">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-start gap-2 text-xs text-indigo-950">
-                              <CheckCircle2 className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
-                              <div>
-                                <span className="text-indigo-700 block">
-                                  {t.reservedBy}{" "}
-                                  <strong className="text-indigo-950">
-                                    {getReservationDisplayName(item)}
-                                  </strong>
+                          {/* Price & Store Link on Image Bottom */}
+                          <div className="absolute bottom-3 left-3.5 right-3.5 flex items-end justify-between text-white">
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-slate-200 font-medium block">
+                                {t.giftPriceLabel}
+                              </span>
+                              <div className="flex items-baseline gap-1.5">
+                                <span className="text-xl sm:text-2xl font-black">
+                                  {item.price} ₾
                                 </span>
-                                {item.reservation.note &&
-                                  !(
-                                    isViewingOwnWishlist &&
-                                    (item.reservation.hideFromOwnerSpoilerFree ||
-                                      spoilerFreeForOwner)
-                                  ) && (
-                                    <p className="mt-1 text-slate-600 italic">
-                                      “{item.reservation.note}”
-                                    </p>
+                                {item.originalCurrency &&
+                                  item.originalCurrency !== "GEL" &&
+                                  item.originalPrice && (
+                                    <span className="text-[11px] text-slate-200 font-medium">
+                                      ({item.originalPrice} {item.originalCurrency})
+                                    </span>
                                   )}
                               </div>
                             </div>
 
-                            {canUnreserve && (
-                              <button
-                                onClick={() => handleUnreserve(item)}
-                                className="text-[11px] font-bold text-rose-600 hover:text-rose-800 underline shrink-0 cursor-pointer"
+                            {item.productUrl && (
+                              <a
+                                href={item.productUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md px-2.5 py-1.5 text-xs font-semibold text-white transition"
                               >
-                                {t.unreserveBtn}
-                              </button>
+                                <span>{t.viewProductLink}</span>
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
                             )}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* Card Footer Action Button */}
-                  <div className="px-5 pb-5 pt-1">
-                    {!item.reservation ? (
-                      <button
-                        onClick={() => {
-                          setActiveReserveItem(item);
-                          if (currentUser) {
-                            setReserveName(currentUser.name);
-                          }
-                        }}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 hover:bg-rose-600 text-white px-4 py-3 text-sm font-bold shadow-sm transition cursor-pointer"
-                      >
-                        <Gift className="h-4 w-4" />
-                        <span>{t.reserveGiftBtn}</span>
-                      </button>
-                    ) : (
-                      <div className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-100/80 text-indigo-900 px-4 py-2.5 text-xs font-bold">
-                        <Lock className="h-3.5 w-3.5 text-indigo-600" />
-                        <span>{t.reservedBadge}</span>
+                        {/* Item Title & Description */}
+                        <div className="p-4 sm:p-5">
+                          <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug line-clamp-2">
+                            {item.title}
+                          </h3>
+                          <p className="mt-1 text-xs text-slate-600 line-clamp-2">
+                            {item.description}
+                          </p>
+
+                          {/* Reservation Details Box */}
+                          {item.reservation && (
+                            <div className="mt-3.5 rounded-2xl bg-indigo-50/90 border border-indigo-200 p-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-start gap-2 text-xs text-indigo-950 min-w-0">
+                                  <CheckCircle2 className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+                                  <div className="min-w-0">
+                                    <span className="text-indigo-700 block truncate">
+                                      {t.reservedBy}{" "}
+                                      <strong className="text-indigo-950">
+                                        {getReservationDisplayName(item)}
+                                      </strong>
+                                    </span>
+                                    {item.reservation.note && (
+                                      <p className="mt-0.5 text-slate-600 italic line-clamp-2">
+                                        “{item.reservation.note}”
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {canUnreserve && (
+                                  <button
+                                    onClick={() => handleUnreserve(item)}
+                                    className="text-[11px] font-bold text-rose-600 hover:text-rose-800 underline shrink-0 cursor-pointer"
+                                  >
+                                    {t.unreserveBtn}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
+
+                      {/* Card Footer Action Button */}
+                      <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-1">
+                        {!item.reservation ? (
+                          <button
+                            onClick={() => {
+                              setActiveReserveItem(item);
+                              setReserveIsAnonymousForAll(false);
+                              if (currentUser) {
+                                setReserveName(currentUser.name);
+                              }
+                            }}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 hover:bg-rose-600 text-white px-4 py-3 text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer"
+                          >
+                            <Gift className="h-4 w-4" />
+                            <span>{t.reserveGiftBtn}</span>
+                          </button>
+                        ) : (
+                          <div className="w-full inline-flex items-center justify-center gap-1.5 rounded-2xl bg-indigo-100/80 text-indigo-900 px-4 py-2.5 text-xs font-bold">
+                            <Lock className="h-3.5 w-3.5 text-indigo-600" />
+                            <span>{t.reservedBadge}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </main>
+        </div>
+      )}
 
       {/* ========================================================= */}
-      {/* MODAL 1: USER LOGIN & REGISTRATION                        */}
+      {/* MODAL 1: USER LOGIN & REGISTRATION (MOBILE BOTTOM SHEET)  */}
       {/* ========================================================= */}
       {authModalMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-200 my-8">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 sm:p-7 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+              <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                 {authModalMode === "login" ? (
                   <>
                     <LogIn className="h-5 w-5 text-rose-600" />
@@ -1143,13 +1432,12 @@ export default function MemindaApp() {
               </h2>
               <button
                 onClick={() => setAuthModalMode(null)}
-                className="h-9 w-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Switch Login / Register Tab */}
             <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl mt-4">
               <button
                 type="button"
@@ -1159,7 +1447,7 @@ export default function MemindaApp() {
                 }}
                 className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                   authModalMode === "login"
-                    ? "bg-white text-slate-900 shadow-sm"
+                    ? "bg-white text-slate-900 shadow-xs"
                     : "text-slate-600"
                 }`}
               >
@@ -1173,7 +1461,7 @@ export default function MemindaApp() {
                 }}
                 className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                   authModalMode === "register"
-                    ? "bg-white text-slate-900 shadow-sm"
+                    ? "bg-white text-slate-900 shadow-xs"
                     : "text-slate-600"
                 }`}
               >
@@ -1182,13 +1470,13 @@ export default function MemindaApp() {
             </div>
 
             {authError && (
-              <div className="mt-4 rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs font-semibold text-rose-700">
+              <div className="mt-3.5 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">
                 {authError}
               </div>
             )}
 
             {authModalMode === "login" ? (
-              <form onSubmit={handleLoginSubmit} className="mt-5 space-y-4">
+              <form onSubmit={handleLoginSubmit} className="mt-4 space-y-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     {t.authIdentifierLabel}
@@ -1224,7 +1512,6 @@ export default function MemindaApp() {
                   {isSubmittingAuth ? "..." : t.loginBtn}
                 </button>
 
-                {/* Quick Demo Account Logins */}
                 <div className="pt-3 border-t border-slate-100">
                   <p className="text-[11px] font-semibold text-slate-500 mb-2">
                     {t.demoQuickLoginTitle}
@@ -1248,7 +1535,7 @@ export default function MemindaApp() {
                 </div>
               </form>
             ) : (
-              <form onSubmit={handleRegisterSubmit} className="mt-5 space-y-3.5">
+              <form onSubmit={handleRegisterSubmit} className="mt-4 space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     {t.authFullNameLabel}
@@ -1332,9 +1619,9 @@ export default function MemindaApp() {
       {/* MODAL 2: CREATE NEW WISHLIST                              */}
       {/* ========================================================= */}
       {isNewWishlistModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 sm:p-7 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
               <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                 <FolderPlus className="h-5 w-5 text-indigo-600" />
                 <span>{t.newWishlistModalTitle}</span>
@@ -1347,7 +1634,7 @@ export default function MemindaApp() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateWishlist} className="mt-5 space-y-4">
+            <form onSubmit={handleCreateWishlist} className="mt-4 space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   {t.wishlistTitleLabel}
@@ -1433,51 +1720,51 @@ export default function MemindaApp() {
       {/* MODAL 3: ADD WISH ITEM (URL SCRAPER + TBC RATE OR MANUAL) */}
       {/* ========================================================= */}
       {isAddItemModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 my-8">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full p-5 sm:p-7 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+              <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                 <Plus className="h-5 w-5 text-rose-600" />
                 <span>{t.addModalTitle}</span>
               </h2>
               <button
                 onClick={() => setIsAddItemModalOpen(false)}
-                className="h-9 w-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl mt-5">
+            <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl mt-4">
               <button
                 type="button"
                 onClick={() => setAddTab("link")}
-                className={`py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
+                className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   addTab === "link"
-                    ? "bg-white text-slate-900 shadow-sm"
+                    ? "bg-white text-slate-900 shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                <Link2 className="h-4 w-4 text-rose-600" />
+                <Link2 className="h-3.5 w-3.5 text-rose-600" />
                 <span>{t.tabByLink}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setAddTab("manual")}
-                className={`py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
+                className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   addTab === "manual"
-                    ? "bg-white text-slate-900 shadow-sm"
+                    ? "bg-white text-slate-900 shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                <Upload className="h-4 w-4 text-indigo-600" />
+                <Upload className="h-3.5 w-3.5 text-indigo-600" />
                 <span>{t.tabManual}</span>
               </button>
             </div>
 
             {addTab === "link" && (
-              <div className="mt-4 rounded-2xl bg-rose-50/70 border border-rose-200/80 p-4">
-                <label className="block text-xs font-bold text-slate-700 mb-2">
+              <div className="mt-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/80 p-3.5">
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   {t.pasteUrlLabel}
                 </label>
                 <div className="flex gap-2">
@@ -1486,38 +1773,38 @@ export default function MemindaApp() {
                     value={urlInput}
                     onChange={(e) => setUrlInput(e.target.value)}
                     placeholder="https://www.amazon.com/... ან https://veli.store/..."
-                    className="flex-1 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="flex-1 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                   <button
                     type="button"
                     onClick={() => handleAutoScrape()}
                     disabled={isScraping}
-                    className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 text-xs font-bold shrink-0 transition cursor-pointer"
+                    className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 text-xs font-bold shrink-0 transition cursor-pointer"
                   >
                     {isScraping ? "..." : t.fetchBtn}
                   </button>
                 </div>
 
-                <div className="mt-3">
-                  <p className="text-[11px] font-semibold text-slate-500 mb-1.5">
+                <div className="mt-2.5">
+                  <p className="text-[11px] font-semibold text-slate-500 mb-1">
                     {t.presetStoreLinksTitle}
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {[
                       {
-                        label: "Amazon.com (USD -> ₾ TBC)",
+                        label: "Amazon (USD->₾)",
                         url: "https://www.amazon.com/dp/B0CHWRXH8B",
                       },
                       {
-                        label: "Zoommer.ge (AirPods)",
+                        label: "Zoommer.ge",
                         url: "https://zoommer.ge/airpods-pro-2",
                       },
                       {
-                        label: "Veli.store (Stanley)",
+                        label: "Veli.store",
                         url: "https://veli.store/stanley-quencher",
                       },
                       {
-                        label: "Extra.ge (DeLonghi)",
+                        label: "Extra.ge",
                         url: "https://extra.ge/delonghi-dedica",
                       },
                     ].map((preset) => (
@@ -1528,7 +1815,7 @@ export default function MemindaApp() {
                           setUrlInput(preset.url);
                           handleAutoScrape(preset.url);
                         }}
-                        className="text-[11px] bg-white hover:bg-rose-100 text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1 font-medium transition cursor-pointer"
+                        className="text-[11px] bg-white hover:bg-rose-100 text-slate-700 border border-slate-200 rounded-lg px-2 py-1 font-medium transition cursor-pointer"
                       >
                         ⚡ {preset.label}
                       </button>
@@ -1538,15 +1825,13 @@ export default function MemindaApp() {
               </div>
             )}
 
-            <form onSubmit={handleCreateWishItem} className="mt-5 space-y-4">
+            <form onSubmit={handleCreateWishItem} className="mt-4 space-y-3.5">
               {conversionInfo && (
-                <div className="rounded-xl bg-sky-50 border border-sky-200 px-3.5 py-2.5 text-xs text-sky-950 flex items-center justify-between gap-2">
-                  <span>
-                    🏦{" "}
-                    {lang === "ka"
-                      ? `ფასი კონვერტირებულია თიბისი ბანკის კურსით: ${conversionInfo.originalPrice} ${conversionInfo.originalCurrency} × ${conversionInfo.exchangeRateUsed} = ${newPrice} ₾`
-                      : `Converted via TBC Bank rate: ${conversionInfo.originalPrice} ${conversionInfo.originalCurrency} × ${conversionInfo.exchangeRateUsed} = ${newPrice} ₾`}
-                  </span>
+                <div className="rounded-xl bg-sky-50 border border-sky-200 px-3 py-2 text-xs text-sky-950">
+                  🏦{" "}
+                  {lang === "ka"
+                    ? `თიბისი ბანკის კურსით: ${conversionInfo.originalPrice} ${conversionInfo.originalCurrency} × ${conversionInfo.exchangeRateUsed} = ${newPrice} ₾`
+                    : `TBC Bank rate: ${conversionInfo.originalPrice} ${conversionInfo.originalCurrency} × ${conversionInfo.exchangeRateUsed} = ${newPrice} ₾`}
                 </div>
               )}
 
@@ -1561,7 +1846,7 @@ export default function MemindaApp() {
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     placeholder={t.itemNamePlaceholder}
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
                 <div>
@@ -1575,12 +1860,12 @@ export default function MemindaApp() {
                     value={newPrice}
                     onChange={(e) => setNewPrice(e.target.value)}
                     placeholder="250"
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     {t.itemStoreLabel}
@@ -1590,7 +1875,7 @@ export default function MemindaApp() {
                     value={newStore}
                     onChange={(e) => setNewStore(e.target.value)}
                     placeholder={t.itemStorePlaceholder}
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
 
@@ -1603,7 +1888,7 @@ export default function MemindaApp() {
                     onChange={(e) =>
                       setNewPriority(e.target.value as "high" | "medium" | "low")
                     }
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-rose-500"
                   >
                     <option value="high">{t.priorityHigh}</option>
                     <option value="medium">{t.priorityMedium}</option>
@@ -1616,12 +1901,12 @@ export default function MemindaApp() {
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   {t.itemImageLabel}
                 </label>
-                <div className="flex flex-col sm:flex-row gap-2 items-center">
+                <div className="flex gap-2 items-center">
                   {newImage && (
                     <img
                       src={newImage}
                       alt="Preview"
-                      className="h-11 w-11 rounded-xl object-contain border border-slate-200 bg-white p-0.5 shrink-0"
+                      className="h-10 w-10 rounded-xl object-contain border border-slate-200 bg-white p-0.5 shrink-0"
                     />
                   )}
                   <input
@@ -1629,11 +1914,11 @@ export default function MemindaApp() {
                     value={newImage}
                     onChange={(e) => setNewImage(e.target.value)}
                     placeholder="https://..."
-                    className="flex-1 w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="flex-1 min-w-0 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
-                  <label className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 cursor-pointer shrink-0">
+                  <label className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-2 text-xs font-bold text-slate-700 cursor-pointer shrink-0">
                     <Upload className="h-3.5 w-3.5" />
-                    <span>{t.uploadPhotoBtn}</span>
+                    <span className="hidden sm:inline">{t.uploadPhotoBtn}</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -1653,21 +1938,21 @@ export default function MemindaApp() {
                   value={newDesc}
                   onChange={(e) => setNewDesc(e.target.value)}
                   placeholder={t.itemDescPlaceholder}
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3">
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsAddItemModalOpen(false)}
-                  className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="rounded-xl px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   {t.cancelBtn}
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-6 py-2.5 text-sm font-bold shadow-md shadow-rose-600/20 cursor-pointer"
+                  className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-5 py-2.5 text-xs sm:text-sm font-bold shadow-md cursor-pointer"
                 >
                   {t.saveWishBtn}
                 </button>
@@ -1678,11 +1963,11 @@ export default function MemindaApp() {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 4: RESERVE GIFT (ACCOUNT OR GUEST WITHOUT REG)      */}
+      {/* MODAL 4: RESERVE GIFT (NAMED OR ANONYMOUS FOR ALL ONLY)   */}
       {/* ========================================================= */}
       {activeReserveItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 sm:p-7 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                 <Gift className="h-5 w-5 text-indigo-600" />
@@ -1697,14 +1982,14 @@ export default function MemindaApp() {
             </div>
 
             {/* Mini Item Preview */}
-            <div className="mt-4 flex items-center gap-3 rounded-2xl bg-slate-50 p-3 border border-slate-200/80">
+            <div className="mt-3.5 flex items-center gap-3 rounded-2xl bg-slate-50 p-3 border border-slate-200/80">
               <img
                 src={activeReserveItem.imageUrl}
                 alt={activeReserveItem.title}
-                className="h-14 w-14 rounded-xl object-cover shrink-0"
+                className="h-12 w-12 rounded-xl object-cover shrink-0"
               />
               <div className="min-w-0 flex-1">
-                <h4 className="text-sm font-bold text-slate-900 truncate">
+                <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
                   {activeReserveItem.title}
                 </h4>
                 <p className="text-xs font-extrabold text-rose-600 mt-0.5">
@@ -1717,12 +2002,12 @@ export default function MemindaApp() {
               {t.reserveModalDesc}
             </p>
 
-            {/* Badge showing whether reserving as registered user or guest */}
+            {/* Account vs Guest status bar */}
             <div className="mt-3">
               {currentUser ? (
                 <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900 flex items-center gap-2">
                   <UserCheck className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <span>
+                  <span className="truncate">
                     {t.reservingAsLoggedUser}{" "}
                     <strong>
                       {currentUser.name} (@{currentUser.username})
@@ -1747,19 +2032,54 @@ export default function MemindaApp() {
             </div>
 
             <form onSubmit={handleReserveSubmit} className="mt-4 space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  {t.yourNameLabel}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={reserveName}
-                  onChange={(e) => setReserveName(e.target.value)}
-                  placeholder={t.yourNamePlaceholder}
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+              {/* Single Anonymous Option: Anonymous for All vs Show Name */}
+              <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setReserveIsAnonymousForAll(false)}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    !reserveIsAnonymousForAll
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600"
+                  }`}
+                >
+                  <Eye className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>{lang === "ka" ? "სახელით" : "With My Name"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReserveIsAnonymousForAll(true)}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    reserveIsAnonymousForAll
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-600"
+                  }`}
+                >
+                  <EyeOff className="h-3.5 w-3.5" />
+                  <span>{lang === "ka" ? "ანონიმურად (ყველასთვის)" : "Anonymous for All"}</span>
+                </button>
               </div>
+
+              {reserveIsAnonymousForAll ? (
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 flex items-start gap-2">
+                  <EyeOff className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
+                  <span>{t.anonymousForAllHint}</span>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {t.yourNameLabel}
+                  </label>
+                  <input
+                    type="text"
+                    required={!reserveIsAnonymousForAll}
+                    value={reserveName}
+                    onChange={(e) => setReserveName(e.target.value)}
+                    placeholder={t.yourNamePlaceholder}
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -1772,32 +2092,6 @@ export default function MemindaApp() {
                   placeholder={t.reserveNotePlaceholder}
                   className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
-              </div>
-
-              {/* Privacy & Surprise Options */}
-              <div className="space-y-2 rounded-2xl bg-slate-50 border border-slate-200 p-3">
-                <label className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={reserveHideOwner}
-                    onChange={(e) => setReserveHideOwner(e.target.checked)}
-                    className="rounded text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span className="font-semibold">🤫 {t.hideFromOwnerLabel}</span>
-                </label>
-
-                <label className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={reserveHidePublic}
-                    onChange={(e) => setReserveHidePublic(e.target.checked)}
-                    className="rounded text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span className="flex items-center gap-1">
-                    <EyeOff className="h-3.5 w-3.5 text-slate-400" />
-                    {t.hideNameFromOthersLabel}
-                  </span>
-                </label>
               </div>
 
               <button

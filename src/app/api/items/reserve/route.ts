@@ -59,13 +59,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const reservedByName = currentUser
+    const isAnonymousForAll = Boolean(body.isAnonymousForAll);
+
+    const reservedByName = isAnonymousForAll
+      ? "ანონიმური"
+      : currentUser
       ? (body.reservedByName || "").trim() || currentUser.name
       : (body.reservedByName || "").trim();
 
     if (!reservedByName) {
       return NextResponse.json(
-        { error: "გთხოვთ მიუთითოთ თქვენი სახელი საჩუქრის დასაჯავშნად" },
+        { error: "გთხოვთ მიუთითოთ თქვენი სახელი ან აირჩიოთ ანონიმური დაჯავშნა" },
         { status: 400 }
       );
     }
@@ -77,8 +81,8 @@ export async function POST(req: NextRequest) {
       reservedByUserId: currentUser?.id,
       reservedByUsername: currentUser?.username,
       reservedByName,
-      isAnonymousToPublic: Boolean(body.isAnonymousToPublic),
-      hideFromOwnerSpoilerFree: Boolean(body.hideFromOwnerSpoilerFree),
+      isAnonymousToPublic: isAnonymousForAll,
+      hideFromOwnerSpoilerFree: isAnonymousForAll,
       note: (body.note || "").trim() || undefined,
       guestCancelTokenHash: hashToken(guestCancelToken),
       reservedAt: new Date().toISOString(),
