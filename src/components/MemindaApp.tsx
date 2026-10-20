@@ -32,6 +32,7 @@ import {
   Camera,
   ShoppingBag,
   Heart,
+  Search,
 } from "lucide-react";
 import { TRANSLATIONS, Language } from "@/lib/meminda-data";
 import type { PublicUser } from "@/lib/auth";
@@ -79,6 +80,9 @@ export default function MemindaApp() {
   const [statusFilter, setStatusFilter] = useState<"all" | "available" | "reserved">("all");
   const [priceFilter, setPriceFilter] = useState<PriceRangeFilter>("all");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
+  const [userSearchQuery, setUserSearchQuery] = useState<string>("");
+  const [headerSearchQuery, setHeaderSearchQuery] = useState<string>("");
+  const [isHeaderSearchOpen, setIsHeaderSearchOpen] = useState<boolean>(false);
 
   // Guest cancel tokens stored in browser localStorage
   const [guestCancelTokens, setGuestCancelTokens] = useState<Record<string, string>>({});
@@ -918,8 +922,103 @@ export default function MemindaApp() {
             </button>
           </div>
 
+          {/* Desktop User Search Bar with Instant Dropdown */}
+          <div className="relative hidden md:block flex-1 max-w-xs lg:max-w-sm mx-2">
+            <div className="relative flex items-center">
+              <Search className="h-4 w-4 text-slate-400 absolute left-3 pointer-events-none" />
+              <input
+                type="text"
+                value={headerSearchQuery}
+                onFocus={() => setIsHeaderSearchOpen(true)}
+                onBlur={() => setTimeout(() => setIsHeaderSearchOpen(false), 180)}
+                onChange={(e) => {
+                  setHeaderSearchQuery(e.target.value);
+                  setIsHeaderSearchOpen(true);
+                }}
+                placeholder={t.searchUsersPlaceholder}
+                className="w-full rounded-xl bg-slate-100/90 hover:bg-slate-100 focus:bg-white border border-transparent focus:border-rose-400 pl-9 pr-8 py-1.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 outline-none transition"
+              />
+              {headerSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setHeaderSearchQuery("")}
+                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {isHeaderSearchOpen && headerSearchQuery.trim().length > 0 && (
+              <div className="absolute left-0 right-0 mt-2 rounded-2xl bg-white border border-slate-200 shadow-xl py-2 z-50 max-h-72 overflow-y-auto">
+                {(() => {
+                  const q = headerSearchQuery.trim().toLowerCase().replace(/^@/, "");
+                  const matchedUsers = users.filter(
+                    (u) =>
+                      u.name.toLowerCase().includes(q) ||
+                      u.username.toLowerCase().includes(q)
+                  );
+                  if (matchedUsers.length === 0) {
+                    return (
+                      <p className="px-4 py-3 text-xs text-slate-500 text-center">
+                        {t.noUsersFound}
+                      </p>
+                    );
+                  }
+                  return matchedUsers.map((u) => {
+                    const userWls = wishlists.filter((w) => w.ownerId === u.id);
+                    const totalItemsCount = items.filter((it) =>
+                      userWls.some((w) => w.id === it.wishlistId)
+                    ).length;
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onMouseDown={() => {
+                          openUserWishlist(u.id);
+                          setIsHeaderSearchOpen(false);
+                          setHeaderSearchQuery("");
+                        }}
+                        className="w-full px-3.5 py-2.5 hover:bg-rose-50/70 flex items-center justify-between gap-2 text-left transition cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src={u.avatarUrl}
+                            alt={u.name}
+                            className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 truncate">
+                              {u.name}
+                            </p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              @{u.username}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="rounded-full bg-rose-50 text-rose-700 px-2 py-0.5 text-[10px] font-bold shrink-0">
+                          🎁 {totalItemsCount} {t.itemsCountSuffix}
+                        </span>
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+            )}
+          </div>
+
           {/* Right Navigation Actions (Compact on Mobile) */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Mobile Search Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsHeaderSearchOpen((prev) => !prev)}
+              className="md:hidden inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 text-xs font-bold transition cursor-pointer"
+              title={t.searchHeaderPlaceholder}
+            >
+              <Search className="h-4 w-4" />
+            </button>
+
             {activePage === "wishlist" && (
               <button
                 onClick={() => setActivePage("home")}
@@ -1030,6 +1129,89 @@ export default function MemindaApp() {
             </div>
           </div>
         </div>
+
+        {/* Mobile Expandable User Search Drawer */}
+        {isHeaderSearchOpen && (
+          <div className="md:hidden px-3 pb-3 border-t border-slate-100 bg-white">
+            <div className="relative flex items-center mt-2">
+              <Search className="h-4 w-4 text-slate-400 absolute left-3 pointer-events-none" />
+              <input
+                type="text"
+                value={headerSearchQuery}
+                onChange={(e) => setHeaderSearchQuery(e.target.value)}
+                placeholder={t.searchUsersPlaceholder}
+                autoFocus
+                className="w-full rounded-xl bg-slate-100 focus:bg-white border border-slate-200 focus:border-rose-400 pl-9 pr-8 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 outline-none"
+              />
+              {headerSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setHeaderSearchQuery("")}
+                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {headerSearchQuery.trim().length > 0 && (
+              <div className="mt-2 rounded-2xl bg-slate-50 border border-slate-200 divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                {(() => {
+                  const q = headerSearchQuery.trim().toLowerCase().replace(/^@/, "");
+                  const matchedUsers = users.filter(
+                    (u) =>
+                      u.name.toLowerCase().includes(q) ||
+                      u.username.toLowerCase().includes(q)
+                  );
+                  if (matchedUsers.length === 0) {
+                    return (
+                      <p className="px-4 py-3 text-xs text-slate-500 text-center">
+                        {t.noUsersFound}
+                      </p>
+                    );
+                  }
+                  return matchedUsers.map((u) => {
+                    const userWls = wishlists.filter((w) => w.ownerId === u.id);
+                    const totalItemsCount = items.filter((it) =>
+                      userWls.some((w) => w.id === it.wishlistId)
+                    ).length;
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => {
+                          openUserWishlist(u.id);
+                          setIsHeaderSearchOpen(false);
+                          setHeaderSearchQuery("");
+                        }}
+                        className="w-full px-3.5 py-2.5 hover:bg-rose-50 flex items-center justify-between gap-2 text-left transition cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src={u.avatarUrl}
+                            alt={u.name}
+                            className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 truncate">
+                              {u.name}
+                            </p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              @{u.username}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="rounded-full bg-rose-100 text-rose-700 px-2 py-0.5 text-[10px] font-bold shrink-0">
+                          🎁 {totalItemsCount} {t.itemsCountSuffix}
+                        </span>
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       {/* ========================================================= */}
@@ -1339,7 +1521,7 @@ export default function MemindaApp() {
 
           {/* Featured / Public Wishlists Directory */}
           <section id="explore-wishlists" className="max-w-6xl mx-auto px-4 sm:px-6">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
               <div>
                 <h2 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2">
                   <Heart className="h-5 w-5 text-rose-600 fill-rose-600" />
@@ -1349,85 +1531,142 @@ export default function MemindaApp() {
                   {t.featuredWishlistsSub}
                 </p>
               </div>
+
+              {/* Search Bar for Specific User / @Username / Wishlist */}
+              <div className="relative w-full md:w-80 lg:w-96">
+                <Search className="h-4 w-4 text-rose-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  placeholder={t.searchUsersPlaceholder}
+                  className="w-full rounded-2xl bg-white border border-slate-200/90 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 pl-10 pr-9 py-2.5 text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 shadow-2xs outline-none transition"
+                />
+                {userSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setUserSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {wishlists.map((wl) => {
-                const owner = users.find((u) => u.id === wl.ownerId);
-                const wlItems = items.filter((i) => i.wishlistId === wl.id);
-                const wlReserved = wlItems.filter((i) => Boolean(i.reservation)).length;
-                const previewImages = wlItems.slice(0, 3).map((i) => i.imageUrl);
+            {(() => {
+              const q = userSearchQuery.trim().toLowerCase().replace(/^@/, "");
+              const filteredWishlists = q
+                ? wishlists.filter((wl) => {
+                    const owner = users.find((u) => u.id === wl.ownerId);
+                    return (
+                      owner?.name.toLowerCase().includes(q) ||
+                      owner?.username.toLowerCase().includes(q) ||
+                      wl.title.toLowerCase().includes(q) ||
+                      wl.description?.toLowerCase().includes(q)
+                    );
+                  })
+                : wishlists;
 
+              if (filteredWishlists.length === 0) {
                 return (
-                  <div
-                    key={wl.id}
-                    onClick={() => openUserWishlist(wl.ownerId, wl.id)}
-                    className="group rounded-3xl bg-white border border-slate-200/90 p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-4">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {owner && (
-                            <img
-                              src={owner.avatarUrl}
-                              alt={owner.name}
-                              className="h-10 w-10 rounded-full object-cover ring-2 ring-rose-100 shrink-0"
-                            />
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold text-slate-900 truncate">
-                              {owner?.name}
-                            </p>
-                            <p className="text-xs text-slate-400 truncate">
-                              @{owner?.username}
-                            </p>
-                          </div>
-                        </div>
-
-                        <span className="rounded-full bg-rose-50 text-rose-700 border border-rose-200/60 px-2.5 py-1 text-[11px] font-bold shrink-0">
-                          {occasionBadge(wl.occasion)}
-                        </span>
-                      </div>
-
-                      <h3 className="text-base sm:text-lg font-extrabold text-slate-900 group-hover:text-rose-600 transition line-clamp-1">
-                        {wl.title}
-                      </h3>
-                      <p className="mt-1 text-xs text-slate-500 line-clamp-2">
-                        {wl.description}
-                      </p>
-
-                      {previewImages.length > 0 && (
-                        <div className="mt-4 grid grid-cols-3 gap-2">
-                          {previewImages.map((imgUrl, i) => (
-                            <div
-                              key={i}
-                              className="h-20 rounded-xl bg-slate-100 overflow-hidden"
-                            >
-                              <img
-                                src={imgUrl}
-                                alt=""
-                                className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-600">
-                        🎁 {wlItems.length} {t.itemsCountSuffix} ({wlReserved}{" "}
-                        {t.reservedGiftsCount})
-                      </span>
-                      <span className="inline-flex items-center gap-1 font-extrabold text-rose-600 group-hover:translate-x-0.5 transition-transform">
-                        <span>{t.viewWishlistBtn}</span>
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </span>
-                    </div>
+                  <div className="rounded-3xl bg-white border border-slate-200/90 p-10 text-center">
+                    <Search className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                    <p className="text-sm font-bold text-slate-700">
+                      {t.noUsersFound}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setUserSearchQuery("")}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 px-4 py-2 text-xs font-bold transition cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      <span>{t.clearSearchBtn}</span>
+                    </button>
                   </div>
                 );
-              })}
-            </div>
+              }
+
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                  {filteredWishlists.map((wl) => {
+                    const owner = users.find((u) => u.id === wl.ownerId);
+                    const wlItems = items.filter((i) => i.wishlistId === wl.id);
+                    const wlReserved = wlItems.filter((i) => Boolean(i.reservation)).length;
+                    const previewImages = wlItems.slice(0, 3).map((i) => i.imageUrl);
+
+                    return (
+                      <div
+                        key={wl.id}
+                        onClick={() => openUserWishlist(wl.ownerId, wl.id)}
+                        className="group rounded-3xl bg-white border border-slate-200/90 p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-4">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {owner && (
+                                <img
+                                  src={owner.avatarUrl}
+                                  alt={owner.name}
+                                  className="h-10 w-10 rounded-full object-cover ring-2 ring-rose-100 shrink-0"
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-slate-900 truncate">
+                                  {owner?.name}
+                                </p>
+                                <p className="text-xs text-slate-400 truncate">
+                                  @{owner?.username}
+                                </p>
+                              </div>
+                            </div>
+
+                            <span className="rounded-full bg-rose-50 text-rose-700 border border-rose-200/60 px-2.5 py-1 text-[11px] font-bold shrink-0">
+                              {occasionBadge(wl.occasion)}
+                            </span>
+                          </div>
+
+                          <h3 className="text-base sm:text-lg font-extrabold text-slate-900 group-hover:text-rose-600 transition line-clamp-1">
+                            {wl.title}
+                          </h3>
+                          <p className="mt-1 text-xs text-slate-500 line-clamp-2">
+                            {wl.description}
+                          </p>
+
+                          {previewImages.length > 0 && (
+                            <div className="mt-4 grid grid-cols-3 gap-2">
+                              {previewImages.map((imgUrl, i) => (
+                                <div
+                                  key={i}
+                                  className="h-20 rounded-xl bg-slate-100 overflow-hidden"
+                                >
+                                  <img
+                                    src={imgUrl}
+                                    alt=""
+                                    className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-600">
+                            🎁 {wlItems.length} {t.itemsCountSuffix} ({wlReserved}{" "}
+                            {t.reservedGiftsCount})
+                          </span>
+                          <span className="inline-flex items-center gap-1 font-extrabold text-rose-600 group-hover:translate-x-0.5 transition-transform">
+                            <span>{t.viewWishlistBtn}</span>
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </section>
         </div>
       )}

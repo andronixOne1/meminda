@@ -47,6 +47,10 @@ export const TRANSLATIONS = {
       "სტუმრებს შეუძლიათ 1 კლიკით დაჯავშნონ საჩუქარი რეგისტრაციის გარეშეც (სახელით ან სრულიად ანონიმურად), რომ არავინ იყიდოს იგივე ნივთი მეორედ.",
     featuredWishlistsTitle: "აღმოაჩინე სურვილების სიები",
     featuredWishlistsSub: "ნახე რას ნატრობენ მომხმარებლები და დაჯავშნე საჩუქარი",
+    searchUsersPlaceholder: "მოძებნე მეგობარი სახელით ან @username-ით...",
+    searchHeaderPlaceholder: "მოძებნე მომხმარებელი...",
+    noUsersFound: "მომხმარებელი ან სურვილების სია ვერ მოიძებნა.",
+    clearSearchBtn: "ძიების გასუფთავება",
     viewWishlistBtn: "სიის ნახვა",
     itemsCountSuffix: "სურვილი",
     // Wishlist View
@@ -204,6 +208,10 @@ export const TRANSLATIONS = {
       "Friends can reserve gifts in one tap with or without registration (by name or completely anonymously) to prevent duplicate gifts.",
     featuredWishlistsTitle: "Explore Community Wishlists",
     featuredWishlistsSub: "Browse public wishlists and reserve gifts for friends",
+    searchUsersPlaceholder: "Search a friend by name or @username...",
+    searchHeaderPlaceholder: "Search user...",
+    noUsersFound: "No user or wishlist matched your search.",
+    clearSearchBtn: "Clear search",
     viewWishlistBtn: "Open Wishlist",
     itemsCountSuffix: "wishes",
     // Wishlist View
