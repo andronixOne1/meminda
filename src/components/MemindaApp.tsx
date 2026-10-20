@@ -923,24 +923,24 @@ export default function MemindaApp() {
       <header className="sticky top-0 z-30 backdrop-blur-md bg-[#FFFDF9]/95 border-b border-orange-100">
         <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
           {/* Brand Logo -> Navigates to Main Landing Page */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
             <button
               onClick={() => setActivePage("home")}
-              className="flex items-center gap-2 sm:gap-2.5 text-left cursor-pointer group min-w-0"
+              className="flex items-center text-left cursor-pointer group shrink-0"
+              aria-label="Meminda Home"
             >
-              <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#FF5A5F] via-[#FF7A45] to-[#FFB800] flex items-center justify-center text-white shadow-md shadow-[#FF5A5F]/25 shrink-0 group-hover:scale-105 transition-transform">
-                <Gift className="h-5 w-5" />
-              </div>
-              <div className="truncate">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-[#FF5A5F] via-[#FF7A45] to-[#F59E0B] bg-clip-text text-transparent">
-                    meminda
-                  </span>
-                  <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200/70">
-                    მემინდა
-                  </span>
-                </div>
-              </div>
+              {/* Mobile Logo (meminda.svg) */}
+              <img
+                src="/meminda.svg"
+                alt="Meminda"
+                className="block sm:hidden h-9 w-9 object-contain group-hover:scale-105 transition-transform"
+              />
+              {/* Desktop Logo: MemindaGE.svg for Georgian, MemindaEN.svg for English */}
+              <img
+                src={lang === "ka" ? "/MemindaGE.svg" : "/MemindaEN.svg"}
+                alt="Meminda"
+                className="hidden sm:block h-10 md:h-11 w-auto object-contain group-hover:scale-[1.03] transition-transform"
+              />
             </button>
           </div>
 

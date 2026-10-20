@@ -16,7 +16,12 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "meminda (მემინდა) — სურვილებისა და საჩუქრების პლატფორმა",
   description:
-    "შექმენი შენი სურვილების სია, გაუზიარე მეგობრებს, დაჯავშნე საჩუქარი ან შეაგროვეთ თანხა საერთო ყულაბაში.",
+    "შექმენი შენი სურვილების სია, გაუზიარე მეგობრებს და დაჯავშნე სასურველი საჩუქარი.",
+  icons: {
+    icon: "/meminda.svg",
+    shortcut: "/meminda.svg",
+    apple: "/meminda.svg",
+  },
 };
 
 export default function RootLayout({
