@@ -34,6 +34,9 @@ import {
   Heart,
   Search,
   Loader2,
+  AlertTriangle,
+  MailCheck,
+  RefreshCw,
 } from "lucide-react";
 import { TRANSLATIONS, Language } from "@/lib/meminda-data";
 import type { PublicUser } from "@/lib/auth";
@@ -42,6 +45,7 @@ import { auth, googleProvider } from "@/lib/firebase";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
   signInWithPopup,
   sendPasswordResetEmail,
   signOut,
@@ -98,6 +102,8 @@ export default function MemindaApp() {
   const [isNewWishlistModalOpen, setIsNewWishlistModalOpen] = useState(false);
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   const [activeReserveItem, setActiveReserveItem] = useState<WishItemRecord | null>(null);
+  const [itemPendingDelete, setItemPendingDelete] = useState<WishItemRecord | null>(null);
+  const [isDeletingItem, setIsDeletingItem] = useState(false);
 
   // Auth Form State
   const [authIdentifier, setAuthIdentifier] = useState("");
@@ -108,6 +114,13 @@ export default function MemindaApp() {
   const [regBio, setRegBio] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+  const [pendingVerification, setPendingVerification] = useState<{
+    email: string;
+    name: string;
+    username: string;
+    bio: string;
+  } | null>(null);
+  const [isResendingVerification, setIsResendingVerification] = useState(false);
 
   // Profile Settings Form State
   const [settingsName, setSettingsName] = useState("");
@@ -528,11 +541,29 @@ export default function MemindaApp() {
             ?.email || identifier;
 
       const cred = await signInWithEmailAndPassword(auth, emailToUse, password);
-      const idToken = await cred.user.getIdToken();
+      await cred.user.reload();
+
+      if (!cred.user.emailVerified) {
+        try {
+          await sendEmailVerification(cred.user);
+        } catch {
+          // Ignore rate limit if already sent recently
+        }
+        setPendingVerification({
+          email: cred.user.email || emailToUse,
+          name: cred.user.displayName || "",
+          username: "",
+          bio: "",
+        });
+        return;
+      }
+
+      const idToken = await cred.user.getIdToken(true);
       const data = await syncFirebaseUserWithBackend(idToken, {
         email: cred.user.email || emailToUse,
       });
       setAuthModalMode(null);
+      setPendingVerification(null);
       setAuthIdentifier("");
       setAuthPassword("");
       await fetchAllData(data.user.id, undefined, true);
@@ -565,7 +596,7 @@ export default function MemindaApp() {
     }
   };
 
-  // Register New Account via Firebase Authentication
+  // Register New Account via Firebase Authentication (with Email Confirmation)
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -589,26 +620,20 @@ export default function MemindaApp() {
       if (regName.trim()) {
         await updateProfile(cred.user, { displayName: regName.trim() });
       }
-      const idToken = await cred.user.getIdToken(true);
-      const data = await syncFirebaseUserWithBackend(idToken, {
+
+      await sendEmailVerification(cred.user);
+
+      setPendingVerification({
+        email: regEmail.trim(),
         name: regName.trim(),
         username: regUsername.trim(),
-        email: regEmail.trim(),
         bio: regBio.trim(),
       });
 
-      setAuthModalMode(null);
-      setRegName("");
-      setRegUsername("");
-      setRegEmail("");
-      setRegBio("");
-      setAuthPassword("");
-      await fetchAllData(data.user.id, data.defaultWishlistId, true);
-      triggerConfetti();
       showToast(
         lang === "ka"
-          ? `🎉 ანგარიში შეიქმნა! მოგესალმებით, ${data.user.name}!`
-          : `🎉 Account created! Welcome, ${data.user.name}!`
+          ? `📧 დასადასტურებელი ბმული გაიგზავნა: ${regEmail.trim()}`
+          : `📧 Verification link sent to ${regEmail.trim()}`
       );
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code || "";
@@ -632,6 +657,92 @@ export default function MemindaApp() {
       }
     } finally {
       setIsSubmittingAuth(false);
+    }
+  };
+
+  // Check if user clicked the email verification link and complete registration/login
+  const handleCheckEmailVerified = async () => {
+    setAuthError(null);
+    setIsSubmittingAuth(true);
+    try {
+      const fbUser = auth.currentUser;
+      if (!fbUser) {
+        setAuthError(
+          lang === "ka"
+            ? "სესია ვერ მოიძებნა. გთხოვთ გაიაროთ ავტორიზაცია."
+            : "Session expired. Please sign in again."
+        );
+        setPendingVerification(null);
+        setAuthModalMode("login");
+        return;
+      }
+
+      await fbUser.reload();
+      if (!fbUser.emailVerified) {
+        setAuthError(
+          lang === "ka"
+            ? "ელ-ფოსტა ჯერ არ არის დადასტურებული. გთხოვთ გადახვიდეთ მეილზე მოსულ ბმულზე (შეამოწმეთ Spam საქაღალდეც)."
+            : "Your email is not verified yet. Please click the verification link sent to your inbox (check Spam folder too)."
+        );
+        return;
+      }
+
+      const idToken = await fbUser.getIdToken(true);
+      const data = await syncFirebaseUserWithBackend(idToken, {
+        name: pendingVerification?.name || fbUser.displayName || "",
+        username: pendingVerification?.username || "",
+        email: pendingVerification?.email || fbUser.email || "",
+        bio: pendingVerification?.bio || "",
+      });
+
+      setPendingVerification(null);
+      setAuthModalMode(null);
+      setRegName("");
+      setRegUsername("");
+      setRegEmail("");
+      setRegBio("");
+      setAuthIdentifier("");
+      setAuthPassword("");
+      await fetchAllData(data.user.id, data.defaultWishlistId, true);
+      triggerConfetti();
+      showToast(
+        lang === "ka"
+          ? `🎉 ელ-ფოსტა დადასტურდა! მოგესალმებით, ${data.user.name}!`
+          : `🎉 Email verified! Welcome, ${data.user.name}!`
+      );
+    } catch (err: unknown) {
+      setAuthError(
+        (err as Error)?.message ||
+          (lang === "ka"
+            ? "ვერიფიკაციის შემოწმება ვერ მოხერხდა"
+            : "Could not verify email status")
+      );
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  };
+
+  // Resend verification email
+  const handleResendVerificationEmail = async () => {
+    setAuthError(null);
+    const fbUser = auth.currentUser;
+    if (!fbUser) return;
+    setIsResendingVerification(true);
+    try {
+      await sendEmailVerification(fbUser);
+      showToast(
+        lang === "ka"
+          ? `📧 დასადასტურებელი წერილი ხელახლა გაიგზავნა!`
+          : `📧 Verification email sent again!`
+      );
+    } catch {
+      setAuthError(
+        lang === "ka"
+          ? "წერილის ხელახლა გაგზავნა დროებით შეზღუდულია. სცადეთ 1 წუთში."
+          : "Please wait a moment before requesting another verification email."
+      );
+    } finally {
+      setIsResendingVerification(false);
     }
   };
 
@@ -787,14 +898,24 @@ export default function MemindaApp() {
     }
   };
 
-  // Delete Item (Owner)
-  const handleDeleteItem = async (itemId: string) => {
-    const res = await fetch(`/api/items?id=${encodeURIComponent(itemId)}`, {
-      method: "DELETE",
-    });
-    if (res.ok) {
-      await fetchAllData(activeProfileUser?.id, activeWishlist?.id, true);
-      showToast(lang === "ka" ? "სურვილი წაიშალა" : "Wish item removed");
+  // Delete Item (Owner) — Confirmed from Warning Modal
+  const handleConfirmDeleteItem = async () => {
+    if (!itemPendingDelete) return;
+    setIsDeletingItem(true);
+    try {
+      const res = await fetch(
+        `/api/items?id=${encodeURIComponent(itemPendingDelete.id)}`,
+        {
+          method: "DELETE",
+        }
+      );
+      if (res.ok) {
+        setItemPendingDelete(null);
+        await fetchAllData(activeProfileUser?.id, activeWishlist?.id, true);
+        showToast(lang === "ka" ? "სურვილი წაიშალა" : "Wish item removed");
+      }
+    } finally {
+      setIsDeletingItem(false);
     }
   };
 
@@ -870,7 +991,8 @@ export default function MemindaApp() {
 
   const canVisitorUnreserve = (item: WishItemRecord): boolean => {
     if (!item.reservation) return false;
-    if (isViewingOwnWishlist) return true;
+    // Users are NOT allowed to remove other people's reservations on their own wishlist
+    if (isViewingOwnWishlist) return false;
     if (
       currentUser &&
       item.reservation.reservedByUserId &&
@@ -2063,7 +2185,7 @@ export default function MemindaApp() {
                             )}
                             {isViewingOwnWishlist && (
                               <button
-                                onClick={() => handleDeleteItem(item.id)}
+                                onClick={() => setItemPendingDelete(item)}
                                 title={t.deleteItemConfirm}
                                 className="h-8 w-8 rounded-full bg-black/50 hover:bg-[#FF5A5F] text-white flex items-center justify-center transition cursor-pointer"
                               >
@@ -2149,19 +2271,30 @@ export default function MemindaApp() {
 
                       <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-1">
                         {!item.reservation ? (
-                          <button
-                            onClick={() => {
-                              setActiveReserveItem(item);
-                              setReserveIsAnonymousForAll(false);
-                              if (currentUser) {
-                                setReserveName(currentUser.name);
-                              }
-                            }}
-                            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-4 py-3 text-xs sm:text-sm font-extrabold shadow-sm shadow-[#FF5A5F]/20 transition cursor-pointer"
-                          >
-                            <Gift className="h-4 w-4" />
-                            <span>{t.reserveGiftBtn}</span>
-                          </button>
+                          isViewingOwnWishlist ? (
+                            <div className="w-full inline-flex items-center justify-center gap-1.5 rounded-2xl bg-slate-100 text-slate-600 px-4 py-2.5 text-xs font-bold border border-slate-200/80">
+                              <Sparkles className="h-3.5 w-3.5 text-[#FF7A45]" />
+                              <span>
+                                {lang === "ka"
+                                  ? "თავისუფალია (სტუმრებს შეუძლიათ დაჯავშნა)"
+                                  : "Available for guests to reserve"}
+                              </span>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setActiveReserveItem(item);
+                                setReserveIsAnonymousForAll(false);
+                                if (currentUser) {
+                                  setReserveName(currentUser.name);
+                                }
+                              }}
+                              className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-4 py-3 text-xs sm:text-sm font-extrabold shadow-sm shadow-[#FF5A5F]/20 transition cursor-pointer"
+                            >
+                              <Gift className="h-4 w-4" />
+                              <span>{t.reserveGiftBtn}</span>
+                            </button>
+                          )
                         ) : (
                           <div className="w-full inline-flex items-center justify-center gap-1.5 rounded-2xl bg-emerald-100/80 text-emerald-900 px-4 py-2.5 text-xs font-extrabold">
                             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
@@ -2179,14 +2312,23 @@ export default function MemindaApp() {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 1: USER LOGIN & REGISTRATION                        */}
+      {/* MODAL 1: USER LOGIN & REGISTRATION (+ EMAIL CONFIRMATION) */}
       {/* ========================================================= */}
       {authModalMode && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 sm:p-7 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
               <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                {authModalMode === "login" ? (
+                {pendingVerification ? (
+                  <>
+                    <MailCheck className="h-5 w-5 text-[#FF5A5F]" />
+                    <span>
+                      {lang === "ka"
+                        ? "ელ-ფოსტის დადასტურება"
+                        : "Confirm Your Email"}
+                    </span>
+                  </>
+                ) : authModalMode === "login" ? (
                   <>
                     <LogIn className="h-5 w-5 text-rose-600" />
                     <span>{t.authLoginTitle}</span>
@@ -2199,237 +2341,339 @@ export default function MemindaApp() {
                 )}
               </h2>
               <button
-                onClick={() => setAuthModalMode(null)}
+                onClick={() => {
+                  setAuthModalMode(null);
+                  setPendingVerification(null);
+                }}
                 className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl mt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthError(null);
-                  setAuthModalMode("login");
-                }}
-                className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  authModalMode === "login"
-                    ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-600"
-                }`}
-              >
-                {t.loginBtn}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthError(null);
-                  setAuthModalMode("register");
-                }}
-                className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  authModalMode === "register"
-                    ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-600"
-                }`}
-              >
-                {t.registerBtn}
-              </button>
-            </div>
-
-            {authError && (
-              <div className="mt-3.5 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">
-                {authError}
-              </div>
-            )}
-
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={isSubmittingAuth}
-                className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 py-2.5 px-4 text-xs sm:text-sm font-bold shadow-2xs transition cursor-pointer"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24">
-                  <path
-                    fill="#EA4335"
-                    d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
-                  />
-                  <path
-                    fill="#4285F4"
-                    d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.8C3.5 20.9 7.4 24 12 24z"
-                  />
-                </svg>
-                <span>
-                  {lang === "ka"
-                    ? "Google-ით გაგრძელება"
-                    : "Continue with Google"}
-                </span>
-              </button>
-
-              <div className="relative my-3.5 flex items-center justify-center">
-                <div className="border-t border-slate-200 w-full" />
-                <span className="bg-white px-3 text-[11px] text-slate-400 font-semibold uppercase">
-                  {lang === "ka" ? "ან" : "OR"}
-                </span>
-                <div className="border-t border-slate-200 w-full" />
-              </div>
-            </div>
-
-            {authModalMode === "login" ? (
-              <form onSubmit={handleLoginSubmit} className="space-y-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t.authIdentifierLabel}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={authIdentifier}
-                    onChange={(e) => setAuthIdentifier(e.target.value)}
-                    placeholder={t.authIdentifierPlaceholder}
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-slate-700">
-                      {t.authPasswordLabel}
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleForgotPassword}
-                      className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer"
-                    >
-                      {lang === "ka" ? "დაგავიწყდათ პაროლი?" : "Forgot password?"}
-                    </button>
+            {pendingVerification ? (
+              <div className="mt-5 space-y-4">
+                <div className="rounded-2xl bg-orange-50/90 border border-orange-200/80 p-4 text-center">
+                  <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-[#FF5A5F] to-[#FF7A45] text-white flex items-center justify-center mx-auto mb-3 shadow-sm">
+                    <MailCheck className="h-6 w-6" />
                   </div>
-                  <input
-                    type="password"
-                    required
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSubmittingAuth}
-                  className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white py-3 text-sm font-bold shadow-md transition cursor-pointer"
-                >
-                  {isSubmittingAuth ? "..." : t.loginBtn}
-                </button>
-
-                <div className="pt-3 border-t border-slate-100">
-                  <p className="text-[11px] font-semibold text-slate-500 mb-2">
-                    {t.demoQuickLoginTitle}
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                    {lang === "ka"
+                      ? "შეამოწმეთ თქვენი ელ-ფოსტა!"
+                      : "Check your email inbox!"}
+                  </h3>
+                  <p className="mt-1.5 text-xs text-slate-600 leading-relaxed">
+                    {lang === "ka" ? (
+                      <>
+                        დასადასტურებელი ბმული გავაგზავნეთ მისამართზე:{" "}
+                        <strong className="text-slate-900">
+                          {pendingVerification.email}
+                        </strong>
+                        . გადადით მეილში მოცემულ ბმულზე და შემდეგ დააჭირეთ ქვემოთ
+                        ღილაკს. (შეამოწმეთ Spam/Junk საქაღალდეც).
+                      </>
+                    ) : (
+                      <>
+                        We sent a confirmation link to{" "}
+                        <strong className="text-slate-900">
+                          {pendingVerification.email}
+                        </strong>
+                        . Please click the link in your email and then press the
+                        button below. (Check your Spam/Junk folder too).
+                      </>
+                    )}
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={(e) => handleLoginSubmit(e, "nini", "demo123")}
-                      className="rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-2 text-xs font-bold text-slate-800 transition cursor-pointer"
-                    >
-                      👩 ნინი (@nini)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => handleLoginSubmit(e, "giorgi", "demo123")}
-                      className="rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-2 text-xs font-bold text-slate-800 transition cursor-pointer"
-                    >
-                      👨 გიორგი (@giorgi)
-                    </button>
-                  </div>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleRegisterSubmit} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t.authFullNameLabel}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={regName}
-                    onChange={(e) => setRegName(e.target.value)}
-                    placeholder={t.authFullNamePlaceholder}
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t.authUsernameLabel}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={regUsername}
-                    onChange={(e) => setRegUsername(e.target.value)}
-                    placeholder={t.authUsernamePlaceholder}
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t.authEmailLabel}
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t.authPasswordLabel} *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    placeholder={
-                      lang === "ka" ? "მინიმუმ 6 სიმბოლო" : "Minimum 6 characters"
-                    }
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t.authBioLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={regBio}
-                    onChange={(e) => setRegBio(e.target.value)}
-                    placeholder={t.authBioPlaceholder}
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
                 </div>
 
+                {authError && (
+                  <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">
+                    {authError}
+                  </div>
+                )}
+
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleCheckEmailVerified}
                   disabled={isSubmittingAuth}
-                  className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white py-3 text-sm font-bold shadow-md transition cursor-pointer"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white py-3 px-4 text-xs sm:text-sm font-extrabold shadow-md transition cursor-pointer disabled:opacity-60"
                 >
-                  {isSubmittingAuth ? "..." : t.registerBtn}
+                  {isSubmittingAuth ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                  <span>
+                    {lang === "ka"
+                      ? "დავადასტურე ელ-ფოსტა — შესვლა"
+                      : "I've Confirmed My Email — Continue"}
+                  </span>
                 </button>
-              </form>
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={handleResendVerificationEmail}
+                    disabled={isResendingVerification}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#FF5A5F] hover:underline cursor-pointer disabled:opacity-60"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${
+                        isResendingVerification ? "animate-spin" : ""
+                      }`}
+                    />
+                    <span>
+                      {lang === "ka"
+                        ? "ბმულის ხელახლა გაგზავნა"
+                        : "Resend confirmation email"}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingVerification(null);
+                      setAuthError(null);
+                    }}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                  >
+                    {lang === "ka" ? "უკან დაბრუნება" : "Back"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl mt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthError(null);
+                      setAuthModalMode("login");
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      authModalMode === "login"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600"
+                    }`}
+                  >
+                    {t.loginBtn}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthError(null);
+                      setAuthModalMode("register");
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      authModalMode === "register"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600"
+                    }`}
+                  >
+                    {t.registerBtn}
+                  </button>
+                </div>
+
+                {authError && (
+                  <div className="mt-3.5 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">
+                    {authError}
+                  </div>
+                )}
+
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    disabled={isSubmittingAuth}
+                    className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 py-2.5 px-4 text-xs sm:text-sm font-bold shadow-2xs transition cursor-pointer"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24">
+                      <path
+                        fill="#EA4335"
+                        d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
+                      />
+                      <path
+                        fill="#4285F4"
+                        d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.8C3.5 20.9 7.4 24 12 24z"
+                      />
+                    </svg>
+                    <span>
+                      {lang === "ka"
+                        ? "Google-ით გაგრძელება"
+                        : "Continue with Google"}
+                    </span>
+                  </button>
+
+                  <div className="relative my-3.5 flex items-center justify-center">
+                    <div className="border-t border-slate-200 w-full" />
+                    <span className="bg-white px-3 text-[11px] text-slate-400 font-semibold uppercase">
+                      {lang === "ka" ? "ან" : "OR"}
+                    </span>
+                    <div className="border-t border-slate-200 w-full" />
+                  </div>
+                </div>
+
+                {authModalMode === "login" ? (
+                  <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        {t.authIdentifierLabel}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={authIdentifier}
+                        onChange={(e) => setAuthIdentifier(e.target.value)}
+                        placeholder={t.authIdentifierPlaceholder}
+                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-700">
+                          {t.authPasswordLabel}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleForgotPassword}
+                          className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer"
+                        >
+                          {lang === "ka"
+                            ? "დაგავიწყდათ პაროლი?"
+                            : "Forgot password?"}
+                        </button>
+                      </div>
+                      <input
+                        type="password"
+                        required
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSubmittingAuth}
+                      className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white py-3 text-sm font-bold shadow-md transition cursor-pointer"
+                    >
+                      {isSubmittingAuth ? "..." : t.loginBtn}
+                    </button>
+
+                    <div className="pt-3 border-t border-slate-100">
+                      <p className="text-[11px] font-semibold text-slate-500 mb-2">
+                        {t.demoQuickLoginTitle}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => handleLoginSubmit(e, "nini", "demo123")}
+                          className="rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-2 text-xs font-bold text-slate-800 transition cursor-pointer"
+                        >
+                          👩 ნინი (@nini)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) =>
+                            handleLoginSubmit(e, "giorgi", "demo123")
+                          }
+                          className="rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-2 text-xs font-bold text-slate-800 transition cursor-pointer"
+                        >
+                          👨 გიორგი (@giorgi)
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={handleRegisterSubmit} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        {t.authFullNameLabel}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                        placeholder={t.authFullNamePlaceholder}
+                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        {t.authUsernameLabel}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regUsername}
+                        onChange={(e) => setRegUsername(e.target.value)}
+                        placeholder={t.authUsernamePlaceholder}
+                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        {t.authEmailLabel}
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        {t.authPasswordLabel} *
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        minLength={6}
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        placeholder={
+                          lang === "ka"
+                            ? "მინიმუმ 6 სიმბოლო"
+                            : "Minimum 6 characters"
+                        }
+                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        {t.authBioLabel}
+                      </label>
+                      <input
+                        type="text"
+                        value={regBio}
+                        onChange={(e) => setRegBio(e.target.value)}
+                        placeholder={t.authBioPlaceholder}
+                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSubmittingAuth}
+                      className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white py-3 text-sm font-bold shadow-md transition cursor-pointer"
+                    >
+                      {isSubmittingAuth ? "..." : t.registerBtn}
+                    </button>
+                  </form>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -3146,6 +3390,95 @@ export default function MemindaApp() {
                 {t.confirmReserveBtn}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 6: DELETE WISH ITEM WARNING CONFIRMATION            */}
+      {/* ========================================================= */}
+      {itemPendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 sm:p-7 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-[#FF5A5F]" />
+                <span>
+                  {lang === "ka"
+                    ? "სურვილის წაშლის დადასტურება"
+                    : "Delete Wish Confirmation"}
+                </span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setItemPendingDelete(null)}
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-center gap-3 rounded-2xl bg-slate-50 p-3 border border-slate-200/80">
+              <img
+                src={itemPendingDelete.imageUrl}
+                alt={itemPendingDelete.title}
+                className="h-12 w-12 rounded-xl object-cover shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                  {itemPendingDelete.title}
+                </h4>
+                <p className="text-xs font-extrabold text-[#FF5A5F] mt-0.5">
+                  {itemPendingDelete.price} ₾
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-3.5 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-950 leading-relaxed flex items-start gap-2.5">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">
+                  {lang === "ka"
+                    ? "ნამდვილად გსურთ ამ სურვილის წაშლა?"
+                    : "Are you sure you want to delete this wish?"}
+                </p>
+                <p className="mt-1 text-amber-900/90">
+                  {itemPendingDelete.reservation
+                    ? lang === "ka"
+                      ? "⚠️ ყურადღება: ეს საჩუქარი უკვე დაჯავშნილია სტუმრის მიერ! მისი წაშლით ჯავშანიც წაიშლება."
+                      : "⚠️ Warning: This gift is already reserved by a guest! Deleting it will also remove their reservation."
+                    : lang === "ka"
+                    ? "ეს მოქმედება შეუქცევადია და ნივთი სამუდამოდ წაიშლება თქვენი სურვილების სიიდან."
+                    : "This action cannot be undone and the item will be permanently removed from your wishlist."}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setItemPendingDelete(null)}
+                disabled={isDeletingItem}
+                className="rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                {t.cancelBtn}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteItem}
+                disabled={isDeletingItem}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#FF5A5F] hover:bg-[#FF4248] text-white px-5 py-2.5 text-xs sm:text-sm font-extrabold shadow-md transition cursor-pointer disabled:opacity-60"
+              >
+                {isDeletingItem ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+                <span>
+                  {lang === "ka" ? "დიახ, წაშლა" : "Yes, Delete Wish"}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}

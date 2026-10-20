@@ -54,6 +54,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (fbUser.emailVerified === false) {
+      return NextResponse.json(
+        {
+          error:
+            "გთხოვთ დაადასტუროთ თქვენი ელ-ფოსტა (შეამოწმეთ Inbox ან Spam საქაღალდე)",
+          code: "EMAIL_NOT_VERIFIED",
+        },
+        { status: 403 }
+      );
+    }
+
     const db = await readDb();
     const email = (fbUser.email || body.email || "").trim().toLowerCase();
 
