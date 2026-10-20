@@ -4,6 +4,7 @@ import crypto from "crypto";
 
 export interface UserRecord {
   id: string;
+  firebaseUid?: string;
   username: string;
   name: string;
   email: string;

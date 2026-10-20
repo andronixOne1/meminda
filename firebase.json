@@ -1,0 +1,11 @@
+{
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Meminda",
+        "supportEmail": "andronix1@gmail.com"
+      }
+    }
+  }
+}

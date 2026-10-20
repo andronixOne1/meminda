@@ -32,6 +32,15 @@ import {
 import { TRANSLATIONS, Language } from "@/lib/meminda-data";
 import type { PublicUser } from "@/lib/auth";
 import type { WishlistRecord, WishItemRecord } from "@/lib/db";
+import { auth, googleProvider } from "@/lib/firebase";
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  sendPasswordResetEmail,
+  signOut,
+  updateProfile,
+} from "firebase/auth";
 
 const GUEST_TOKENS_STORAGE_KEY = "meminda_guest_cancel_tokens_v1";
 
@@ -259,7 +268,60 @@ export default function MemindaApp() {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
-  // Auth Handlers
+  // Firebase & Server Auth Sync Helper
+  const syncFirebaseUserWithBackend = async (
+    idToken: string,
+    extra?: { name?: string; username?: string; email?: string; bio?: string }
+  ) => {
+    const res = await fetch("/api/auth/firebase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idToken,
+        ...extra,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Authentication failed");
+    }
+    return data;
+  };
+
+  // Google Sign-In via Firebase Auth
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    setIsSubmittingAuth(true);
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      const idToken = await cred.user.getIdToken();
+      const data = await syncFirebaseUserWithBackend(idToken, {
+        name: cred.user.displayName || undefined,
+        email: cred.user.email || undefined,
+      });
+      setAuthModalMode(null);
+      await fetchAllData(data.user.id, data.defaultWishlistId, true);
+      triggerConfetti();
+      showToast(
+        lang === "ka"
+          ? `👋 მოგესალმებით, ${data.user.name}!`
+          : `👋 Welcome, ${data.user.name}!`
+      );
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code || "";
+      if (code !== "auth/popup-closed-by-user") {
+        setAuthError(
+          lang === "ka"
+            ? "Google-ით შესვლა ვერ მოხერხდა. სცადეთ ელ-ფოსტით."
+            : "Google Sign-In failed. Please try with Email & Password."
+        );
+      }
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  };
+
+  // Email/Password Login via Firebase Auth (with fallback for seeded demo usernames)
   const handleLoginSubmit = async (
     e: React.FormEvent,
     quickIdent?: string,
@@ -268,14 +330,58 @@ export default function MemindaApp() {
     e.preventDefault();
     setAuthError(null);
     setIsSubmittingAuth(true);
+    const identifier = (quickIdent ?? authIdentifier).trim();
+    const password = quickPass ?? authPassword;
+
     try {
+      // If user entered an email address (and not a seeded demo account), authenticate with Firebase Auth first
+      if (identifier.includes("@") && !identifier.endsWith("@meminda.ge")) {
+        const cred = await signInWithEmailAndPassword(auth, identifier, password);
+        const idToken = await cred.user.getIdToken();
+        const data = await syncFirebaseUserWithBackend(idToken, {
+          email: cred.user.email || identifier,
+        });
+        setAuthModalMode(null);
+        setAuthIdentifier("");
+        setAuthPassword("");
+        await fetchAllData(data.user.id, undefined, true);
+        showToast(
+          lang === "ka"
+            ? `👋 მოგესალმებით, ${data.user.name}!`
+            : `👋 Welcome back, ${data.user.name}!`
+        );
+        return;
+      }
+
+      // If user entered a username, look up if they have an email or use local/demo login
+      const matchedUser = users.find(
+        (u) => u.username.toLowerCase() === identifier.toLowerCase()
+      );
+      if (matchedUser?.email && !matchedUser.email.endsWith("@meminda.ge")) {
+        const cred = await signInWithEmailAndPassword(
+          auth,
+          matchedUser.email,
+          password
+        );
+        const idToken = await cred.user.getIdToken();
+        const data = await syncFirebaseUserWithBackend(idToken);
+        setAuthModalMode(null);
+        setAuthIdentifier("");
+        setAuthPassword("");
+        await fetchAllData(data.user.id, undefined, true);
+        showToast(
+          lang === "ka"
+            ? `👋 მოგესალმებით, ${data.user.name}!`
+            : `👋 Welcome back, ${data.user.name}!`
+        );
+        return;
+      }
+
+      // Fallback for pre-seeded demo profiles (@nini, @giorgi)
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          identifier: quickIdent ?? authIdentifier,
-          password: quickPass ?? authPassword,
-        }),
+        body: JSON.stringify({ identifier, password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -291,34 +397,61 @@ export default function MemindaApp() {
           ? `👋 მოგესალმებით, ${data.user.name}!`
           : `👋 Welcome back, ${data.user.name}!`
       );
-    } catch {
-      setAuthError("Network error");
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code || "";
+      if (
+        code === "auth/invalid-credential" ||
+        code === "auth/wrong-password" ||
+        code === "auth/user-not-found"
+      ) {
+        setAuthError(
+          lang === "ka"
+            ? "არასწორი ელ-ფოსტა ან პაროლი"
+            : "Invalid email or password"
+        );
+      } else {
+        setAuthError(
+          (err as Error)?.message ||
+            (lang === "ka" ? "შესვლის შეცდომა" : "Authentication error")
+        );
+      }
     } finally {
       setIsSubmittingAuth(false);
     }
   };
 
+  // Register New Account via Firebase Authentication
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
+
+    if (authPassword.length < 6) {
+      setAuthError(
+        lang === "ka"
+          ? "Firebase უსაფრთხოებისთვის პაროლი უნდა შეიცავდეს მინიმუმ 6 სიმბოლოს"
+          : "Password must be at least 6 characters long"
+      );
+      return;
+    }
+
     setIsSubmittingAuth(true);
     try {
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: regName,
-          username: regUsername,
-          email: regEmail,
-          password: authPassword,
-          bio: regBio,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAuthError(data.error || "Registration error");
-        return;
+      const cred = await createUserWithEmailAndPassword(
+        auth,
+        regEmail.trim(),
+        authPassword
+      );
+      if (regName.trim()) {
+        await updateProfile(cred.user, { displayName: regName.trim() });
       }
+      const idToken = await cred.user.getIdToken(true);
+      const data = await syncFirebaseUserWithBackend(idToken, {
+        name: regName.trim(),
+        username: regUsername.trim(),
+        email: regEmail.trim(),
+        bio: regBio.trim(),
+      });
+
       setAuthModalMode(null);
       setRegName("");
       setRegUsername("");
@@ -329,17 +462,67 @@ export default function MemindaApp() {
       triggerConfetti();
       showToast(
         lang === "ka"
-          ? `🎉 ანგარიში შეიქმნა! კეთილი იყოს თქვენი მობრძანება, ${data.user.name}!`
-          : `🎉 Account created! Welcome to Meminda, ${data.user.name}!`
+          ? `🎉 Firebase ანგარიში შეიქმნა! მოგესალმებით, ${data.user.name}!`
+          : `🎉 Firebase account created! Welcome, ${data.user.name}!`
       );
-    } catch {
-      setAuthError("Network error");
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code || "";
+      if (code === "auth/email-already-in-use") {
+        setAuthError(
+          lang === "ka"
+            ? "ამ ელ-ფოსტით Firebase ანგარიში უკვე არსებობს"
+            : "This email is already registered in Firebase"
+        );
+      } else if (code === "auth/weak-password") {
+        setAuthError(
+          lang === "ka"
+            ? "პაროლი ძალიან სუსტია (მინიმუმ 6 სიმბოლო)"
+            : "Password is too weak (minimum 6 characters)"
+        );
+      } else {
+        setAuthError(
+          (err as Error)?.message ||
+            (lang === "ka" ? "რეგისტრაციის შეცდომა" : "Registration error")
+        );
+      }
     } finally {
       setIsSubmittingAuth(false);
     }
   };
 
+  // Password Reset Email via Firebase Auth
+  const handleForgotPassword = async () => {
+    const email = authIdentifier.trim();
+    if (!email || !email.includes("@")) {
+      setAuthError(
+        lang === "ka"
+          ? "პაროლის აღსადგენად გთხოვთ ჩაწეროთ თქვენი ელ-ფოსტა ზემოთ ველში"
+          : "Please enter your email address above to receive a password reset link"
+      );
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      showToast(
+        lang === "ka"
+          ? `📧 პაროლის აღდგენის ბმული გაიგზავნა: ${email}`
+          : `📧 Password reset email sent to ${email}`
+      );
+    } catch {
+      setAuthError(
+        lang === "ka"
+          ? "პაროლის აღდგენის წერილის გაგზავნა ვერ მოხერხდა"
+          : "Could not send password reset email"
+      );
+    }
+  };
+
   const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch {
+      // Ignore client signout error
+    }
     await fetch("/api/auth/logout", { method: "POST" });
     setCurrentUser(null);
     showToast(lang === "ka" ? "ანგარიშიდან გამოხვედით" : "Logged out");
@@ -1475,8 +1658,50 @@ export default function MemindaApp() {
               </div>
             )}
 
+            {/* Google Sign-In via Firebase Auth */}
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={isSubmittingAuth}
+                className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 py-2.5 px-4 text-xs sm:text-sm font-bold shadow-2xs transition cursor-pointer"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#EA4335"
+                    d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.8C3.5 20.9 7.4 24 12 24z"
+                  />
+                </svg>
+                <span>
+                  {lang === "ka"
+                    ? "Google-ით გაგრძელება (Firebase)"
+                    : "Continue with Google"}
+                </span>
+              </button>
+
+              <div className="relative my-3.5 flex items-center justify-center">
+                <div className="border-t border-slate-200 w-full" />
+                <span className="bg-white px-3 text-[11px] text-slate-400 font-semibold uppercase">
+                  {lang === "ka" ? "ან" : "OR"}
+                </span>
+                <div className="border-t border-slate-200 w-full" />
+              </div>
+            </div>
+
             {authModalMode === "login" ? (
-              <form onSubmit={handleLoginSubmit} className="mt-4 space-y-3.5">
+              <form onSubmit={handleLoginSubmit} className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     {t.authIdentifierLabel}
@@ -1491,9 +1716,18 @@ export default function MemindaApp() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t.authPasswordLabel}
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">
+                      {t.authPasswordLabel}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer"
+                    >
+                      {lang === "ka" ? "დაგავიწყდათ პაროლი?" : "Forgot password?"}
+                    </button>
+                  </div>
                   <input
                     type="password"
                     required
@@ -1535,7 +1769,7 @@ export default function MemindaApp() {
                 </div>
               </form>
             ) : (
-              <form onSubmit={handleRegisterSubmit} className="mt-4 space-y-3">
+              <form onSubmit={handleRegisterSubmit} className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     {t.authFullNameLabel}
@@ -1582,10 +1816,12 @@ export default function MemindaApp() {
                   <input
                     type="password"
                     required
-                    minLength={4}
+                    minLength={6}
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
-                    placeholder="მინიმუმ 4 სიმბოლო"
+                    placeholder={
+                      lang === "ka" ? "მინიმუმ 6 სიმბოლო" : "Minimum 6 characters"
+                    }
                     className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
