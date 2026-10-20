@@ -1029,13 +1029,13 @@ export default function MemindaApp() {
             )}
           </div>
 
-          {/* Right Navigation Actions (Compact on Mobile) */}
+          {/* Right Navigation Actions (Streamlined & Uncrowded on Mobile) */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Mobile Search Toggle Button */}
             <button
               type="button"
               onClick={() => setIsHeaderSearchOpen((prev) => !prev)}
-              className="md:hidden inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 text-xs font-bold transition cursor-pointer"
+              className="md:hidden inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 h-9 w-9 text-xs font-bold transition cursor-pointer"
               title={t.searchHeaderPlaceholder}
             >
               <Search className="h-4 w-4" />
@@ -1044,58 +1044,65 @@ export default function MemindaApp() {
             {activePage === "wishlist" && (
               <button
                 onClick={() => setActivePage("home")}
-                className="inline-flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-2 text-xs font-bold transition cursor-pointer"
+                className="hidden sm:inline-flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-2 text-xs font-bold transition cursor-pointer"
                 title={t.homeNav}
               >
                 <Home className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t.homeNav}</span>
+                <span>{t.homeNav}</span>
               </button>
             )}
 
             {currentUser ? (
               <>
+                {/* Prioritized Primary CTA: Add New Wish (Always visible when logged in) */}
+                <button
+                  onClick={() => {
+                    if (activePage !== "wishlist" || !isViewingOwnWishlist) {
+                      openUserWishlist(currentUser.id);
+                    }
+                    setIsAddItemModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-3 sm:px-3.5 py-2 text-xs font-extrabold shadow-sm shadow-[#FF5A5F]/25 transition cursor-pointer"
+                >
+                  <Plus className="h-4 w-4 stroke-[2.5]" />
+                  <span>{t.addGiftBtn}</span>
+                </button>
+
+                {/* User Profile Button: Avatar-only on Mobile, Avatar + Name on Desktop */}
                 <button
                   onClick={() => openUserWishlist(currentUser.id)}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-bold transition cursor-pointer ${
+                  title={currentUser.name}
+                  className={`inline-flex items-center gap-1.5 rounded-full sm:rounded-xl p-0.5 sm:px-3 sm:py-1.5 text-xs font-bold transition cursor-pointer ${
                     activePage === "wishlist" && isViewingOwnWishlist
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-100 hover:bg-slate-200 text-slate-800"
+                      ? "ring-2 ring-[#FF5A5F] sm:ring-0 sm:bg-slate-900 sm:text-white"
+                      : "hover:opacity-90 sm:bg-slate-100 sm:hover:bg-slate-200 sm:text-slate-800"
                   }`}
                 >
                   <img
                     src={currentUser.avatarUrl}
                     alt={currentUser.name}
-                    className="h-5 w-5 rounded-full object-cover shrink-0"
+                    className="h-8 w-8 sm:h-5 sm:w-5 rounded-full object-cover shrink-0"
                   />
-                  <span className="max-w-[85px] sm:max-w-[130px] truncate">
+                  <span className="hidden sm:inline max-w-[130px] truncate">
                     {currentUser.name.split(" ")[0]}
                   </span>
                 </button>
 
-                {/* Profile Settings Button */}
+                {/* Profile Settings Button (includes Language & Account Settings) */}
                 <button
                   onClick={openProfileSettingsModal}
                   title={t.settingsBtn}
-                  className="inline-flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-2 text-xs font-bold transition cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 h-9 w-9 sm:h-auto sm:w-auto sm:px-2.5 sm:py-2 text-xs font-bold transition cursor-pointer"
                 >
                   <Settings className="h-4 w-4 text-slate-600" />
                   <span className="hidden md:inline">{t.settingsBtn}</span>
                 </button>
 
-                {activePage === "wishlist" && isViewingOwnWishlist && activeWishlist && (
-                  <button
-                    onClick={() => setIsAddItemModalOpen(true)}
-                    className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-2.5 sm:px-3.5 py-2 text-xs font-bold shadow-sm transition cursor-pointer"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{t.addGiftBtn}</span>
-                  </button>
-                )}
-
+                {/* Desktop Logout Button (On mobile, Logout is inside Profile Settings) */}
                 <button
                   onClick={handleLogout}
                   title={t.logoutBtn}
-                  className="inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-orange-50 hover:text-[#FF5A5F] text-slate-600 p-2 text-xs font-semibold transition cursor-pointer"
+                  className="hidden sm:inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-orange-50 hover:text-[#FF5A5F] text-slate-600 p-2 text-xs font-semibold transition cursor-pointer"
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
@@ -1123,32 +1130,32 @@ export default function MemindaApp() {
                   <UserPlus className="h-3.5 w-3.5 hidden sm:inline" />
                   <span>{t.registerBtn}</span>
                 </button>
+
+                {/* Language Toggle for Guests on Desktop */}
+                <div className="hidden sm:inline-flex rounded-xl bg-slate-100 p-0.5 border border-slate-200">
+                  <button
+                    onClick={() => setLang("ka")}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                      lang === "ka"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    ქარ
+                  </button>
+                  <button
+                    onClick={() => setLang("en")}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                      lang === "en"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    EN
+                  </button>
+                </div>
               </>
             )}
-
-            {/* Compact Language Toggle */}
-            <div className="inline-flex rounded-xl bg-slate-100 p-0.5 border border-slate-200">
-              <button
-                onClick={() => setLang("ka")}
-                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                  lang === "ka"
-                    ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                ქარ
-              </button>
-              <button
-                onClick={() => setLang("en")}
-                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                  lang === "en"
-                    ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                EN
-              </button>
-            </div>
           </div>
         </div>
 
@@ -2458,6 +2465,44 @@ export default function MemindaApp() {
             )}
 
             <form onSubmit={handleSaveProfileSettings} className="mt-4 space-y-4">
+              {/* Language Switcher inside Profile Settings */}
+              <div className="rounded-2xl bg-orange-50/60 border border-orange-100 p-3.5 flex items-center justify-between gap-3">
+                <div>
+                  <span className="block text-xs font-extrabold text-slate-800">
+                    {lang === "ka" ? "🌐 საიტის ენა / Language" : "🌐 Interface Language"}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {lang === "ka"
+                      ? "აირჩიეთ სასურველი ენა"
+                      : "Choose your preferred language"}
+                  </span>
+                </div>
+                <div className="inline-flex rounded-xl bg-white p-1 border border-orange-200/80 shadow-2xs shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setLang("ka")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                      lang === "ka"
+                        ? "bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    🇬🇪 ქარ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLang("en")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                      lang === "en"
+                        ? "bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    🇬🇧 EN
+                  </button>
+                </div>
+              </div>
+
               {/* Profile Picture Section */}
               <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5">
                 <label className="block text-xs font-bold text-slate-700 mb-2">
@@ -2582,21 +2627,35 @@ export default function MemindaApp() {
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsProfileSettingsOpen(false)}
-                  className="rounded-xl px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  onClick={() => {
+                    setIsProfileSettingsOpen(false);
+                    handleLogout();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold text-[#FF5A5F] hover:bg-orange-50 transition cursor-pointer"
                 >
-                  {t.cancelBtn}
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span>{t.logoutBtn}</span>
                 </button>
-                <button
-                  type="submit"
-                  disabled={isSavingSettings}
-                  className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-5 py-2.5 text-xs sm:text-sm font-bold shadow-md cursor-pointer"
-                >
-                  {isSavingSettings ? "..." : t.saveProfileBtn}
-                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileSettingsOpen(false)}
+                    className="rounded-xl px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    {t.cancelBtn}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingSettings}
+                    className="rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-5 py-2.5 text-xs sm:text-sm font-bold shadow-md cursor-pointer"
+                  >
+                    {isSavingSettings ? "..." : t.saveProfileBtn}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
