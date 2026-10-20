@@ -309,11 +309,19 @@ export default function MemindaApp() {
       );
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code || "";
-      if (code !== "auth/popup-closed-by-user") {
+      if (code === "auth/unauthorized-domain") {
+        const host =
+          typeof window !== "undefined" ? window.location.hostname : "meminda.ge";
         setAuthError(
           lang === "ka"
-            ? "Google-ით შესვლა ვერ მოხერხდა. სცადეთ ელ-ფოსტით."
-            : "Google Sign-In failed. Please try with Email & Password."
+            ? `დომენი "${host}" დასამატებელია Firebase Console -> Authentication -> Settings -> Authorized domains-ში.`
+            : `Please add "${host}" in Firebase Console -> Authentication -> Settings -> Authorized domains.`
+        );
+      } else if (code !== "auth/popup-closed-by-user") {
+        setAuthError(
+          lang === "ka"
+            ? `Google-ით შესვლა ვერ მოხერხდა (${code || "შეცდომა"}).`
+            : `Google Sign-In failed (${code || "error"}).`
         );
       }
     } finally {
