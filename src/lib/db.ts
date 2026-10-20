@@ -1,6 +1,13 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import {
+  collection,
+  getDocs,
+  doc,
+  writeBatch,
+} from "firebase/firestore";
+import { firestoreDb } from "./firebase";
 
 export interface UserRecord {
   id: string;
@@ -80,6 +87,10 @@ export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(`meminda_cancel_${token}`).digest("hex");
 }
 
+function cleanForFirestore<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 function getInitialSeedData(): DatabaseSchema {
   const niniId = "user-nini";
   const giorgiId = "user-giorgi";
@@ -91,8 +102,10 @@ function getInitialSeedData(): DatabaseSchema {
       name: "ნინი შენგელია",
       email: "nini@meminda.ge",
       passwordHash: hashPassword("demo123"),
-      bioKa: "დიზაინერი თბილისიდან ✨ აქ ნახავთ ჩემი დაბადების დღისა და ახალმოსახლეობის სურვილების სიებს!",
-      bioEn: "Product Designer in Tbilisi ✨ Here are my birthday & housewarming wishlists!",
+      bioKa:
+        "დიზაინერი თბილისიდან ✨ აქ ნახავთ ჩემი დაბადების დღისა და ახალმოსახლეობის სურვილების სიებს!",
+      bioEn:
+        "Product Designer in Tbilisi ✨ Here are my birthday & housewarming wishlists!",
       avatarUrl:
         "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
       createdAt: "2026-10-01T10:00:00.000Z",
@@ -154,7 +167,8 @@ function getInitialSeedData(): DatabaseSchema {
       wishlistId: "wl-nini-bday",
       ownerId: niniId,
       title: "Apple AirPods Pro 2 (USB-C) MagSafe Case",
-      description: "უსადენო ყურსასმენი ხმაურის აქტიური ჩახშობით. იყიდება Zoommer-ში.",
+      description:
+        "უსადენო ყურსასმენი ხმაურის აქტიური ჩახშობით. იყიდება Zoommer-ში.",
       price: 749,
       imageUrl:
         "https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?auto=format&fit=crop&w=900&q=80",
@@ -253,7 +267,8 @@ function getInitialSeedData(): DatabaseSchema {
       wishlistId: "wl-giorgi-bday",
       ownerId: giorgiId,
       title: "AeroPress Clear ყავის მოსამზადებელი",
-      description: "საუკეთესო ფილტრ-ყავის დასამზადებლად სახლში და ლაშქრობაში.",
+      description:
+        "საუკეთესო ფილტრ-ყავის დასამზადებლად სახლში და ლაშქრობაში.",
       price: 145,
       imageUrl:
         "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=900&q=80",
@@ -273,30 +288,133 @@ function getInitialSeedData(): DatabaseSchema {
   };
 }
 
-export function readDb(): DatabaseSchema {
+function readLocalFallbackDb(): DatabaseSchema {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, "utf-8");
+      return JSON.parse(raw) as DatabaseSchema;
     }
-    if (!fs.existsSync(DB_FILE)) {
-      const seed = getInitialSeedData();
-      fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), "utf-8");
-      return seed;
-    }
-    const raw = fs.readFileSync(DB_FILE, "utf-8");
-    return JSON.parse(raw) as DatabaseSchema;
   } catch {
-    return getInitialSeedData();
+    // Ignore local read error
   }
+  return getInitialSeedData();
 }
 
-export function writeDb(data: DatabaseSchema): void {
+function writeLocalFallbackDb(data: DatabaseSchema): void {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch {
+    // Ignore on read-only environments
+  }
+}
+
+// Track known document IDs so deletions are also committed to Firestore
+let lastKnownItemIds = new Set<string>();
+let lastKnownWishlistIds = new Set<string>();
+
+/**
+ * Reads all Users, Wishlists, and WishItems from Cloud Firestore.
+ * If Firestore is empty on first run, seeds it with any existing local DB data or initial seed data.
+ */
+export async function readDb(): Promise<DatabaseSchema> {
+  try {
+    const [usersSnap, wishlistsSnap, itemsSnap] = await Promise.all([
+      getDocs(collection(firestoreDb, "users")),
+      getDocs(collection(firestoreDb, "wishlists")),
+      getDocs(collection(firestoreDb, "items")),
+    ]);
+
+    if (usersSnap.empty) {
+      const initialData = readLocalFallbackDb();
+      await writeDb(initialData);
+      return initialData;
+    }
+
+    const users: UserRecord[] = usersSnap.docs
+      .map((d) => d.data() as UserRecord)
+      .sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+
+    const wishlists: WishlistRecord[] = wishlistsSnap.docs
+      .map((d) => d.data() as WishlistRecord)
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+    const items: WishItemRecord[] = itemsSnap.docs
+      .map((d) => d.data() as WishItemRecord)
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+    lastKnownWishlistIds = new Set(wishlists.map((w) => w.id));
+    lastKnownItemIds = new Set(items.map((i) => i.id));
+
+    return {
+      users,
+      wishlists,
+      items,
+      sessions: [],
+    };
   } catch (err) {
-    console.error("Failed to write database:", err);
+    console.error("Firestore read error, falling back to local DB:", err);
+    return readLocalFallbackDb();
+  }
+}
+
+/**
+ * Persists Users, Wishlists, and WishItems into Cloud Firestore collections.
+ */
+export async function writeDb(data: DatabaseSchema): Promise<void> {
+  writeLocalFallbackDb(data);
+
+  try {
+    const batch = writeBatch(firestoreDb);
+
+    // Upsert users
+    for (const user of data.users) {
+      const ref = doc(firestoreDb, "users", user.id);
+      batch.set(ref, cleanForFirestore(user));
+    }
+
+    // Upsert wishlists & delete removed wishlists
+    const currentWlIds = new Set<string>();
+    for (const wl of data.wishlists) {
+      currentWlIds.add(wl.id);
+      const ref = doc(firestoreDb, "wishlists", wl.id);
+      batch.set(ref, cleanForFirestore(wl));
+    }
+    for (const oldWlId of lastKnownWishlistIds) {
+      if (!currentWlIds.has(oldWlId)) {
+        batch.delete(doc(firestoreDb, "wishlists", oldWlId));
+      }
+    }
+
+    // Upsert items & delete removed items
+    const currentItemIds = new Set<string>();
+    for (const item of data.items) {
+      currentItemIds.add(item.id);
+      const ref = doc(firestoreDb, "items", item.id);
+      batch.set(ref, cleanForFirestore(item));
+    }
+    for (const oldItemId of lastKnownItemIds) {
+      if (!currentItemIds.has(oldItemId)) {
+        batch.delete(doc(firestoreDb, "items", oldItemId));
+      }
+    }
+
+    await batch.commit();
+
+    lastKnownWishlistIds = currentWlIds;
+    lastKnownItemIds = currentItemIds;
+  } catch (err) {
+    console.error("Failed to write to Firestore:", err);
   }
 }

@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing itemId" }, { status: 400 });
     }
 
-    const db = readDb();
+    const db = await readDb();
     const itemIndex = db.items.findIndex((i) => i.id === itemId);
     if (itemIndex === -1) {
       return NextResponse.json({ error: "Item not found" }, { status: 404 });
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       }
 
       db.items[itemIndex].reservation = null;
-      writeDb(db);
+      await writeDb(db);
 
       return NextResponse.json({ ok: true, item: db.items[itemIndex] });
     }
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       reservedAt: new Date().toISOString(),
     };
 
-    writeDb(db);
+    await writeDb(db);
 
     const { guestCancelTokenHash, ...safeReservation } =
       db.items[itemIndex].reservation!;

@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
 import crypto from "crypto";
-import { readDb, writeDb, UserRecord } from "./db";
+import { readDb, UserRecord } from "./db";
 
 export const SESSION_COOKIE_NAME = "meminda_session";
+const SESSION_SECRET =
+  process.env.MEMINDA_SESSION_SECRET || "meminda_prod_secret_key_2026_ge";
 
 export interface PublicUser {
   id: string;
@@ -28,17 +30,42 @@ export function toPublicUser(user: UserRecord, includeEmail = false): PublicUser
   };
 }
 
+function signUserId(userId: string): string {
+  const payload = Buffer.from(userId, "utf-8").toString("base64url");
+  const sig = crypto
+    .createHmac("sha256", SESSION_SECRET)
+    .update(payload)
+    .digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+function verifySignedToken(token: string): string | null {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+  const expectedSig = crypto
+    .createHmac("sha256", SESSION_SECRET)
+    .update(payload)
+    .digest("base64url");
+  if (sig !== expectedSig) return null;
+  try {
+    return Buffer.from(payload, "base64url").toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
 export async function getCurrentUser(): Promise<UserRecord | null> {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
     if (!token) return null;
 
-    const db = readDb();
-    const session = db.sessions.find((s) => s.token === token);
-    if (!session) return null;
+    const userId = verifySignedToken(token);
+    if (!userId) return null;
 
-    const user = db.users.find((u) => u.id === session.userId);
+    const db = await readDb();
+    const user = db.users.find((u) => u.id === userId);
     return user || null;
   } catch {
     return null;
@@ -46,19 +73,9 @@ export async function getCurrentUser(): Promise<UserRecord | null> {
 }
 
 export function createSessionForUser(userId: string): string {
-  const db = readDb();
-  const token = crypto.randomBytes(24).toString("hex");
-  db.sessions.push({
-    token,
-    userId,
-    createdAt: new Date().toISOString(),
-  });
-  writeDb(db);
-  return token;
+  return signUserId(userId);
 }
 
-export function removeSessionToken(token: string): void {
-  const db = readDb();
-  db.sessions = db.sessions.filter((s) => s.token !== token);
-  writeDb(db);
+export function removeSessionToken(_token: string): void {
+  void _token;
 }

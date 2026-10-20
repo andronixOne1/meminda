@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const db = readDb();
+    const db = await readDb();
     const user = db.users.find(
       (u) =>
         u.email.toLowerCase() === identifier ||

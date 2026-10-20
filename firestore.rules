@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /meminda_store/{docId} {
+      allow read, write: if true;
+    }
+    match /users/{docId} {
+      allow read, write: if true;
+    }
+    match /wishlists/{docId} {
+      allow read, write: if true;
+    }
+    match /items/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

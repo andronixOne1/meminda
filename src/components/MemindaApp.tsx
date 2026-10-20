@@ -271,17 +271,45 @@ export default function MemindaApp() {
     setIsProfileSettingsOpen(true);
   };
 
+  const compressImageFile = (
+    file: File,
+    maxDimension: number,
+    onDone: (dataUrl: string) => void
+  ) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const raw = reader.result;
+      if (typeof raw !== "string") return;
+      const img = new window.Image();
+      img.onload = () => {
+        const scale = Math.min(
+          1,
+          maxDimension / Math.max(img.width || 1, img.height || 1)
+        );
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          onDone(canvas.toDataURL("image/jpeg", 0.82));
+        } else {
+          onDone(raw);
+        }
+      };
+      img.onerror = () => onDone(raw);
+      img.src = raw;
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Handle Profile Picture file upload (auto-resizes to clean Data URL)
   const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        setSettingsAvatar(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    compressImageFile(file, 450, (dataUrl) => setSettingsAvatar(dataUrl));
   };
 
   // Save Profile Settings
@@ -715,13 +743,7 @@ export default function MemindaApp() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        setNewImage(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    compressImageFile(file, 750, (dataUrl) => setNewImage(dataUrl));
   };
 
   // Add Item to Wishlist

@@ -3,7 +3,7 @@ import { readDb, writeDb, WishlistRecord } from "@/lib/db";
 import { getCurrentUser, toPublicUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
-  const db = readDb();
+  const db = await readDb();
   const currentUser = await getCurrentUser();
   const { searchParams } = new URL(req.url);
   const usernameParam = searchParams.get("username")?.toLowerCase();
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
     }
 
-    const db = readDb();
+    const db = await readDb();
     const id = `wl-${Date.now()}`;
     const slugBase = title
       .toLowerCase()
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     };
 
     db.wishlists.unshift(newWishlist);
-    writeDb(db);
+    await writeDb(db);
 
     return NextResponse.json({ wishlist: newWishlist });
   } catch {

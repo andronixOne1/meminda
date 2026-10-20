@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const db = readDb();
+    const db = await readDb();
     const email = (fbUser.email || body.email || "").trim().toLowerCase();
 
     // 1. Check if user already exists by firebaseUid or email
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       if (fbUser.photoUrl && existingUser.avatarUrl.includes("unsplash.com")) {
         existingUser.avatarUrl = fbUser.photoUrl;
       }
-      writeDb(db);
+      await writeDb(db);
     } else {
       // 2. First-time user (via Firebase Register or Google Sign-In) -> Create Profile & Starter Wishlist
       const name =
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
         createdAt: new Date().toISOString(),
       });
 
-      writeDb(db);
+      await writeDb(db);
     }
 
     const sessionToken = createSessionForUser(existingUser.id);

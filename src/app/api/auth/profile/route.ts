@@ -10,7 +10,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const db = readDb();
+    const db = await readDb();
     const userIndex = db.users.findIndex((u) => u.id === currentUser.id);
     if (userIndex === -1) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -103,7 +103,7 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    writeDb(db);
+    await writeDb(db);
 
     return NextResponse.json({
       ok: true,

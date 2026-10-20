@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const db = readDb();
+    const db = await readDb();
 
     if (db.users.some((u) => u.username.toLowerCase() === rawUsername)) {
       return NextResponse.json(
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     });
 
-    writeDb(db);
+    await writeDb(db);
 
     const token = createSessionForUser(userId);
     const res = NextResponse.json({

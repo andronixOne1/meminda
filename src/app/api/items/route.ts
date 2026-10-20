@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const db = readDb();
+    const db = await readDb();
     const wishlist = db.wishlists.find((w) => w.id === wishlistId);
     if (!wishlist || wishlist.ownerId !== currentUser.id) {
       return NextResponse.json(
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     };
 
     db.items.unshift(newItem);
-    writeDb(db);
+    await writeDb(db);
 
     return NextResponse.json({ item: newItem });
   } catch {
@@ -75,14 +75,14 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Missing item id" }, { status: 400 });
   }
 
-  const db = readDb();
+  const db = await readDb();
   const item = db.items.find((i) => i.id === itemId);
   if (!item || item.ownerId !== currentUser.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   db.items = db.items.filter((i) => i.id !== itemId);
-  writeDb(db);
+  await writeDb(db);
 
   return NextResponse.json({ ok: true });
 }
