@@ -908,11 +908,11 @@ export default function MemindaApp() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-slate-900 pb-20">
+    <div className="min-h-screen bg-[#FFFDF9] text-slate-900 pb-20">
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 flex items-center gap-3 rounded-2xl bg-slate-900 px-4 py-3.5 text-xs sm:text-sm font-medium text-white shadow-2xl border border-slate-700">
-          <Sparkles className="h-4 w-4 text-amber-400 shrink-0" />
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 flex items-center gap-3 rounded-2xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] px-4 py-3.5 text-xs sm:text-sm font-bold text-white shadow-2xl border border-white/25">
+          <Sparkles className="h-4 w-4 text-[#FFE066] shrink-0" />
           <span className="truncate">{toastMessage}</span>
         </div>
       )}
@@ -920,7 +920,7 @@ export default function MemindaApp() {
       {/* ========================================================= */}
       {/* MOBILE-FRIENDLY STICKY HEADER                             */}
       {/* ========================================================= */}
-      <header className="sticky top-0 z-30 backdrop-blur-md bg-white/95 border-b border-slate-200/80">
+      <header className="sticky top-0 z-30 backdrop-blur-md bg-[#FFFDF9]/95 border-b border-orange-100">
         <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
           {/* Brand Logo -> Navigates to Main Landing Page */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -928,15 +928,15 @@ export default function MemindaApp() {
               onClick={() => setActivePage("home")}
               className="flex items-center gap-2 sm:gap-2.5 text-left cursor-pointer group min-w-0"
             >
-              <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-gradient-to-br from-rose-600 via-pink-600 to-amber-500 flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-105 transition-transform">
+              <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#FF5A5F] via-[#FF7A45] to-[#FFB800] flex items-center justify-center text-white shadow-md shadow-[#FF5A5F]/25 shrink-0 group-hover:scale-105 transition-transform">
                 <Gift className="h-5 w-5" />
               </div>
               <div className="truncate">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-rose-600 to-indigo-700 bg-clip-text text-transparent">
+                  <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-[#FF5A5F] via-[#FF7A45] to-[#F59E0B] bg-clip-text text-transparent">
                     meminda
                   </span>
-                  <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                  <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200/70">
                     მემინდა
                   </span>
                 </div>
@@ -1085,7 +1085,7 @@ export default function MemindaApp() {
                 {activePage === "wishlist" && isViewingOwnWishlist && activeWishlist && (
                   <button
                     onClick={() => setIsAddItemModalOpen(true)}
-                    className="inline-flex items-center gap-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-2.5 sm:px-3.5 py-2 text-xs font-bold shadow-sm transition cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-2.5 sm:px-3.5 py-2 text-xs font-bold shadow-sm transition cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     <span className="hidden sm:inline">{t.addGiftBtn}</span>
@@ -1095,7 +1095,7 @@ export default function MemindaApp() {
                 <button
                   onClick={handleLogout}
                   title={t.logoutBtn}
-                  className="inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 p-2 text-xs font-semibold transition cursor-pointer"
+                  className="inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-orange-50 hover:text-[#FF5A5F] text-slate-600 p-2 text-xs font-semibold transition cursor-pointer"
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
@@ -1107,9 +1107,9 @@ export default function MemindaApp() {
                     setAuthError(null);
                     setAuthModalMode("login");
                   }}
-                  className="inline-flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 px-2.5 sm:px-3.5 py-2 text-xs font-bold transition cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-xl bg-orange-50 hover:bg-orange-100 text-slate-800 px-2.5 sm:px-3.5 py-2 text-xs font-bold transition cursor-pointer"
                 >
-                  <LogIn className="h-3.5 w-3.5" />
+                  <LogIn className="h-3.5 w-3.5 text-[#FF5A5F]" />
                   <span>{t.loginBtn}</span>
                 </button>
 
@@ -1118,7 +1118,7 @@ export default function MemindaApp() {
                     setAuthError(null);
                     setAuthModalMode("register");
                   }}
-                  className="inline-flex items-center gap-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-2.5 sm:px-3.5 py-2 text-xs font-bold shadow-sm transition cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-2.5 sm:px-3.5 py-2 text-xs font-bold shadow-sm shadow-[#FF5A5F]/20 transition cursor-pointer"
                 >
                   <UserPlus className="h-3.5 w-3.5 hidden sm:inline" />
                   <span>{t.registerBtn}</span>
@@ -1241,28 +1241,28 @@ export default function MemindaApp() {
       {/* ========================================================= */}
       {activePage === "home" && (
         <div className="space-y-12 sm:space-y-16">
-          {/* Animated Split Hero Section */}
+          {/* Animated Split Hero Section — Sunshine Coral & Tangerine Pop */}
           <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-5 sm:pt-8">
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-rose-950 text-white px-5 py-9 sm:p-10 md:p-14 shadow-2xl">
-              {/* Animated Ambient Glow Orbs */}
-              <div className="pointer-events-none absolute -top-24 -right-24 h-80 w-80 rounded-full bg-rose-500/25 blur-3xl animate-pulse-soft" />
-              <div className="pointer-events-none absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-indigo-500/25 blur-3xl animate-pulse-soft" />
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#FF5A5F] via-[#FF7A45] to-[#FFB800] text-white px-5 py-9 sm:p-10 md:p-14 shadow-2xl shadow-[#FF5A5F]/20">
+              {/* Animated Ambient Sunshine Glow Orbs */}
+              <div className="pointer-events-none absolute -top-24 -right-24 h-80 w-80 rounded-full bg-[#FFE066]/40 blur-3xl animate-pulse-soft" />
+              <div className="pointer-events-none absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-white/25 blur-3xl animate-pulse-soft" />
 
               <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
                 {/* Left Column: Hero Copy & CTAs */}
                 <div className="lg:col-span-7">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 backdrop-blur px-3.5 py-1 text-xs font-bold text-amber-300 border border-white/15">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 backdrop-blur px-3.5 py-1 text-xs font-extrabold text-white border border-white/30 shadow-2xs">
                     {t.heroBadge}
                   </span>
 
-                  <h1 className="mt-4 sm:mt-5 text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight">
+                  <h1 className="mt-4 sm:mt-5 text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight drop-shadow-xs">
                     {t.heroTitleLine1}{" "}
-                    <span className="bg-gradient-to-r from-rose-400 via-pink-300 to-amber-300 bg-clip-text text-transparent">
+                    <span className="text-[#FFF3B0] underline decoration-[#FFF3B0]/50 decoration-wavy underline-offset-8">
                       {t.heroTitleLine2}
                     </span>
                   </h1>
 
-                  <p className="mt-3.5 sm:mt-4 text-sm sm:text-base md:text-lg text-slate-200 leading-relaxed max-w-xl">
+                  <p className="mt-3.5 sm:mt-4 text-sm sm:text-base md:text-lg text-white/95 font-medium leading-relaxed max-w-xl">
                     {t.heroSubtitle}
                   </p>
 
@@ -1270,9 +1270,9 @@ export default function MemindaApp() {
                     {currentUser ? (
                       <button
                         onClick={() => openUserWishlist(currentUser.id)}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white px-6 py-3.5 text-sm sm:text-base font-extrabold shadow-lg shadow-rose-600/30 transition hover:-translate-y-0.5 cursor-pointer"
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white hover:bg-[#FFFDF9] text-[#FF5A5F] px-6 py-3.5 text-sm sm:text-base font-black shadow-xl shadow-black/10 transition hover:-translate-y-0.5 cursor-pointer"
                       >
-                        <Gift className="h-5 w-5" />
+                        <Gift className="h-5 w-5 text-[#FF5A5F]" />
                         <span>{t.heroGoToMyProfile}</span>
                         <ArrowRight className="h-4 w-4" />
                       </button>
@@ -1282,16 +1282,16 @@ export default function MemindaApp() {
                           setAuthError(null);
                           setAuthModalMode("register");
                         }}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white px-6 py-3.5 text-sm sm:text-base font-extrabold shadow-lg shadow-rose-600/30 transition hover:-translate-y-0.5 cursor-pointer"
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white hover:bg-[#FFFDF9] text-[#FF5A5F] px-6 py-3.5 text-sm sm:text-base font-black shadow-xl shadow-black/10 transition hover:-translate-y-0.5 cursor-pointer"
                       >
-                        <Sparkles className="h-5 w-5" />
+                        <Sparkles className="h-5 w-5 text-[#FFB800] fill-[#FFB800]" />
                         <span>{t.heroPrimaryCta}</span>
                       </button>
                     )}
 
                     <a
                       href="#explore-wishlists"
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 text-sm sm:text-base font-bold transition"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/20 hover:bg-white/30 border border-white/35 text-white px-6 py-3.5 text-sm sm:text-base font-extrabold backdrop-blur-xs transition"
                     >
                       <Users className="h-4 w-4" />
                       <span>{t.heroSecondaryCta}</span>
@@ -1299,18 +1299,18 @@ export default function MemindaApp() {
                   </div>
 
                   {/* Social Proof Avatars Strip */}
-                  <div className="mt-7 pt-5 border-t border-white/10 flex flex-wrap items-center gap-3">
+                  <div className="mt-7 pt-5 border-t border-white/25 flex flex-wrap items-center gap-3">
                     <div className="flex -space-x-2.5">
                       {PRESET_AVATARS.slice(0, 4).map((av, i) => (
                         <img
                           key={i}
                           src={av}
                           alt=""
-                          className="h-8 w-8 rounded-full object-cover ring-2 ring-slate-900"
+                          className="h-8 w-8 rounded-full object-cover ring-2 ring-white"
                         />
                       ))}
                     </div>
-                    <p className="text-xs text-slate-300">
+                    <p className="text-xs font-semibold text-white/95">
                       {lang === "ka"
                         ? "🇬🇪 შექმნილია საქართველოსთვის • 100% უფასო • რეგისტრაციის გარეშე დაჯავშნა"
                         : "🇬🇪 Built for Georgia • 100% Free • Reserve gifts without registration"}
@@ -1322,25 +1322,25 @@ export default function MemindaApp() {
                 <div className="lg:col-span-5 relative">
                   <div className="relative mx-auto max-w-sm">
                     {/* Main Floating Product Card */}
-                    <div className="rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 p-4 shadow-2xl animate-float-slow">
-                      <div className="relative h-44 sm:h-48 rounded-2xl overflow-hidden bg-slate-800">
+                    <div className="rounded-3xl bg-white/95 backdrop-blur-xl border border-white p-4 shadow-2xl text-slate-900 animate-float-slow">
+                      <div className="relative h-44 sm:h-48 rounded-2xl overflow-hidden bg-orange-50">
                         <img
                           src="https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?auto=format&fit=crop&w=800&q=80"
                           alt="Headphones"
                           className="h-full w-full object-cover"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-                        <span className="absolute top-2.5 left-2.5 rounded-full bg-rose-600 px-2.5 py-0.5 text-[11px] font-bold text-white">
+                        <span className="absolute top-2.5 left-2.5 rounded-full bg-[#FF5A5F] px-2.5 py-0.5 text-[11px] font-bold text-white shadow-xs">
                           🔥 {t.priorityHigh}
                         </span>
-                        <span className="absolute top-2.5 right-2.5 rounded-full bg-white/90 px-2.5 py-0.5 text-[11px] font-bold text-slate-900">
+                        <span className="absolute top-2.5 right-2.5 rounded-full bg-white/95 px-2.5 py-0.5 text-[11px] font-bold text-slate-900">
                           🛍️ Zoommer.ge
                         </span>
                         <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-white">
                           <span className="text-sm font-bold truncate">
                             Sony WH-1000XM5
                           </span>
-                          <span className="text-lg font-black text-amber-300">
+                          <span className="text-lg font-black text-[#FFE066]">
                             949 ₾
                           </span>
                         </div>
@@ -1351,33 +1351,33 @@ export default function MemindaApp() {
                           <img
                             src={PRESET_AVATARS[0]}
                             alt="Nini"
-                            className="h-7 w-7 rounded-full object-cover ring-2 ring-rose-400"
+                            className="h-7 w-7 rounded-full object-cover ring-2 ring-[#FF5A5F]"
                           />
-                          <span className="text-xs font-bold text-slate-200">
+                          <span className="text-xs font-extrabold text-slate-800">
                             {lang === "ka" ? "ნინის დაბადების დღე 🎂" : "Nini's Birthday 🎂"}
                           </span>
                         </div>
-                        <span className="rounded-xl bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-1 text-[11px] font-extrabold text-emerald-300">
+                        <span className="rounded-xl bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700">
                           ✓ {t.reservedBadge}
                         </span>
                       </div>
                     </div>
 
                     {/* Secondary Floating Mini Card (Bottom Left) */}
-                    <div className="mt-3 sm:mt-0 sm:absolute sm:-bottom-5 sm:-left-6 rounded-2xl bg-white text-slate-900 p-3 shadow-xl border border-slate-100 flex items-center gap-3 animate-float-delayed">
+                    <div className="mt-3 sm:mt-0 sm:absolute sm:-bottom-5 sm:-left-6 rounded-2xl bg-white text-slate-900 p-3 shadow-xl border border-amber-100 flex items-center gap-3 animate-float-delayed">
                       <img
                         src="https://images.unsplash.com/photo-1517668808822-9ebb02f2a0e6?auto=format&fit=crop&w=300&q=80"
                         alt="Espresso"
                         className="h-12 w-12 rounded-xl object-cover shrink-0"
                       />
                       <div>
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#FF5A5F] block">
                           {lang === "ka" ? "ახალმოსახლეობა 🏡" : "Housewarming 🏡"}
                         </span>
                         <p className="text-xs font-bold text-slate-900">
                           DeLonghi Dedica • 689 ₾
                         </p>
-                        <p className="text-[11px] text-emerald-700 font-semibold">
+                        <p className="text-[11px] text-emerald-600 font-bold">
                           {lang === "ka"
                             ? "🎁 დაჯავშნა: ანონიმურმა მეგობარმა"
                             : "🎁 Reserved by: Anonymous"}
@@ -1503,14 +1503,14 @@ export default function MemindaApp() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
               {[
                 {
-                  icon: <Link2 className="h-6 w-6 text-rose-600" />,
-                  bg: "bg-rose-50 border-rose-100",
+                  icon: <Link2 className="h-6 w-6 text-[#FF5A5F]" />,
+                  bg: "bg-orange-50 border-orange-100",
                   title: t.step1Title,
                   desc: t.step1Desc,
                 },
                 {
-                  icon: <Share2 className="h-6 w-6 text-indigo-600" />,
-                  bg: "bg-indigo-50 border-indigo-100",
+                  icon: <Share2 className="h-6 w-6 text-amber-500" />,
+                  bg: "bg-amber-50 border-amber-100",
                   title: t.step2Title,
                   desc: t.step2Desc,
                 },
@@ -1733,22 +1733,23 @@ export default function MemindaApp() {
             </div>
           </div>
 
-          {/* Profile Hero Banner */}
+          {/* Profile Hero Banner — Sunshine Coral & Tangerine Pop */}
           <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-3">
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-rose-950 text-white p-5 sm:p-8 shadow-lg">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#FF5A5F] via-[#FF7A45] to-[#FFB800] text-white p-5 sm:p-8 shadow-xl shadow-[#FF5A5F]/15">
+              <div className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full bg-[#FFE066]/35 blur-3xl" />
               <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
                 <div className="flex items-center gap-4">
                   <div className="relative shrink-0">
                     <img
                       src={activeProfileUser.avatarUrl}
                       alt={activeProfileUser.name}
-                      className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl object-cover ring-2 ring-white/25 shadow-md"
+                      className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl object-cover ring-3 ring-white/50 shadow-md"
                     />
                     {isViewingOwnWishlist && (
                       <button
                         onClick={openProfileSettingsModal}
                         title={t.profileSettingsTitle}
-                        className="absolute -bottom-1.5 -right-1.5 h-7 w-7 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shadow-md ring-2 ring-slate-900 cursor-pointer"
+                        className="absolute -bottom-1.5 -right-1.5 h-7 w-7 rounded-full bg-white text-[#FF5A5F] hover:bg-orange-50 flex items-center justify-center shadow-md ring-2 ring-[#FF5A5F] cursor-pointer"
                       >
                         <Camera className="h-3.5 w-3.5" />
                       </button>
@@ -1756,29 +1757,29 @@ export default function MemindaApp() {
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                      <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold text-rose-200">
+                      <span className="rounded-full bg-white/25 backdrop-blur-xs px-2.5 py-0.5 text-[11px] font-bold text-white">
                         @{activeProfileUser.username}
                       </span>
                       {isViewingOwnWishlist && (
                         <button
                           onClick={openProfileSettingsModal}
-                          className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/30 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300 cursor-pointer"
+                          className="inline-flex items-center gap-1 rounded-full bg-white/95 hover:bg-white px-2.5 py-0.5 text-[11px] font-extrabold text-[#FF5A5F] shadow-2xs cursor-pointer"
                         >
                           <span>👑 {t.ownerBadge}</span>
                           <Settings className="h-3 w-3 ml-0.5" />
                         </button>
                       )}
                       {activeWishlist && (
-                        <span className="rounded-full bg-amber-400/20 px-2.5 py-0.5 text-[11px] font-semibold text-amber-200">
+                        <span className="rounded-full bg-[#FFF3B0]/30 border border-white/30 px-2.5 py-0.5 text-[11px] font-bold text-white">
                           {occasionBadge(activeWishlist.occasion)}
                         </span>
                       )}
                     </div>
 
-                    <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight leading-snug">
+                    <h1 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight leading-snug drop-shadow-2xs">
                       {activeWishlist ? activeWishlist.title : activeProfileUser.name}
                     </h1>
-                    <p className="mt-1 text-xs sm:text-sm text-slate-200 max-w-2xl line-clamp-2">
+                    <p className="mt-1 text-xs sm:text-sm text-white/95 font-medium max-w-2xl line-clamp-2">
                       {activeWishlist
                         ? activeWishlist.description
                         : lang === "ka"
@@ -1789,23 +1790,23 @@ export default function MemindaApp() {
                 </div>
 
                 {/* Stats + Share Button */}
-                <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto pt-3 md:pt-0 border-t border-white/10 md:border-none">
+                <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto pt-3 md:pt-0 border-t border-white/20 md:border-none">
                   <div className="flex items-center gap-2">
-                    <div className="rounded-xl bg-white/10 px-3 py-2 text-center">
-                      <p className="text-[10px] text-slate-300">{t.totalWishes}</p>
+                    <div className="rounded-xl bg-white/20 backdrop-blur-xs border border-white/25 px-3 py-2 text-center">
+                      <p className="text-[10px] font-bold text-white/90">{t.totalWishes}</p>
                       <p className="text-base sm:text-xl font-black text-white">
                         {wishlistItems.length}
                       </p>
                     </div>
-                    <div className="rounded-xl bg-white/10 px-3 py-2 text-center">
-                      <p className="text-[10px] text-slate-300">{t.availableWishes}</p>
-                      <p className="text-base sm:text-xl font-black text-amber-300">
+                    <div className="rounded-xl bg-white/20 backdrop-blur-xs border border-white/25 px-3 py-2 text-center">
+                      <p className="text-[10px] font-bold text-white/90">{t.availableWishes}</p>
+                      <p className="text-base sm:text-xl font-black text-[#FFF3B0]">
                         {availableCount}
                       </p>
                     </div>
-                    <div className="rounded-xl bg-white/10 px-3 py-2 text-center">
-                      <p className="text-[10px] text-slate-300">{t.reservedGiftsCount}</p>
-                      <p className="text-base sm:text-xl font-black text-emerald-300">
+                    <div className="rounded-xl bg-white/20 backdrop-blur-xs border border-white/25 px-3 py-2 text-center">
+                      <p className="text-[10px] font-bold text-white/90">{t.reservedGiftsCount}</p>
+                      <p className="text-base sm:text-xl font-black text-emerald-100">
                         {reservedCount}
                       </p>
                     </div>
@@ -1818,7 +1819,7 @@ export default function MemindaApp() {
                       setCopied(true);
                       setTimeout(() => setCopied(false), 2500);
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-white text-slate-900 hover:bg-rose-50 px-3.5 py-2.5 text-xs font-extrabold shadow-sm transition cursor-pointer shrink-0"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-white text-[#FF5A5F] hover:bg-orange-50 px-3.5 py-2.5 text-xs font-extrabold shadow-md transition cursor-pointer shrink-0"
                   >
                     {copied ? (
                       <>
@@ -1827,7 +1828,7 @@ export default function MemindaApp() {
                       </>
                     ) : (
                       <>
-                        <Share2 className="h-4 w-4 text-rose-600" />
+                        <Share2 className="h-4 w-4 text-[#FF5A5F]" />
                         <span>{t.shareBtn}</span>
                       </>
                     )}
@@ -1836,20 +1837,20 @@ export default function MemindaApp() {
               </div>
 
               {/* Multiple Wishlists Tabs */}
-              <div className="mt-5 pt-4 border-t border-white/15 flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <div className="mt-5 pt-4 border-t border-white/25 flex items-center gap-2 overflow-x-auto no-scrollbar">
                 {profileWishlists.map((wl) => (
                   <button
                     key={wl.id}
                     onClick={() => setSelectedWishlistId(wl.id)}
                     className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer shrink-0 ${
                       wl.id === activeWishlist?.id
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "bg-white/10 text-slate-200 hover:bg-white/20"
+                        ? "bg-white text-[#FF5A5F] shadow-sm font-extrabold"
+                        : "bg-white/20 text-white hover:bg-white/30"
                     }`}
                   >
                     <span>{wl.title}</span>
                     {wl.eventDate && (
-                      <span className="text-[10px] opacity-75 hidden sm:inline-flex items-center gap-1">
+                      <span className="text-[10px] opacity-80 hidden sm:inline-flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
                         {wl.eventDate}
                       </span>
@@ -1861,7 +1862,7 @@ export default function MemindaApp() {
                   <>
                     <button
                       onClick={() => setIsNewWishlistModalOpen(true)}
-                      className="inline-flex items-center gap-1 rounded-xl bg-white/15 hover:bg-white/25 text-white px-3 py-2 text-xs font-bold transition cursor-pointer shrink-0"
+                      className="inline-flex items-center gap-1 rounded-xl bg-white/20 hover:bg-white/30 border border-white/30 text-white px-3 py-2 text-xs font-bold transition cursor-pointer shrink-0"
                     >
                       <FolderPlus className="h-3.5 w-3.5" />
                       <span>{t.createWishlistBtn}</span>
@@ -1869,9 +1870,9 @@ export default function MemindaApp() {
                     {activeWishlist && (
                       <button
                         onClick={() => setIsAddItemModalOpen(true)}
-                        className="inline-flex items-center gap-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-2 text-xs font-bold shadow-sm transition cursor-pointer shrink-0"
+                        className="inline-flex items-center gap-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 text-xs font-bold shadow-sm transition cursor-pointer shrink-0"
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus className="h-3.5 w-3.5 text-[#FFB800]" />
                         <span>{t.addGiftBtn}</span>
                       </button>
                     )}
@@ -1950,8 +1951,8 @@ export default function MemindaApp() {
                   onClick={() => setPriceFilter(pf.id)}
                   className={`rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer shrink-0 ${
                     priceFilter === pf.id
-                      ? "bg-rose-600 text-white shadow-xs"
-                      : "bg-white text-slate-600 hover:bg-rose-50 border border-slate-200"
+                      ? "bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] text-white shadow-xs"
+                      : "bg-white text-slate-600 hover:bg-orange-50 border border-slate-200"
                   }`}
                 >
                   {pf.label}
@@ -1960,8 +1961,8 @@ export default function MemindaApp() {
             </div>
 
             {!isViewingOwnWishlist && (
-              <div className="text-xs font-medium text-indigo-900 bg-indigo-50/90 border border-indigo-200/80 rounded-2xl px-3.5 py-2.5 flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-indigo-600 shrink-0" />
+              <div className="text-xs font-semibold text-amber-950 bg-amber-50/95 border border-amber-200/80 rounded-2xl px-3.5 py-2.5 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-[#FF7A45] shrink-0" />
                 <span>{t.guestHintBanner}</span>
               </div>
             )}
@@ -2048,7 +2049,7 @@ export default function MemindaApp() {
 
                           <div className="absolute top-3 right-3 flex items-center gap-1.5">
                             {isReserved && (
-                              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-600 text-white shadow-sm">
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500 text-white shadow-sm">
                                 {t.reservedBadge}
                               </span>
                             )}
@@ -2056,7 +2057,7 @@ export default function MemindaApp() {
                               <button
                                 onClick={() => handleDeleteItem(item.id)}
                                 title={t.deleteItemConfirm}
-                                className="h-8 w-8 rounded-full bg-black/50 hover:bg-rose-600 text-white flex items-center justify-center transition cursor-pointer"
+                                className="h-8 w-8 rounded-full bg-black/50 hover:bg-[#FF5A5F] text-white flex items-center justify-center transition cursor-pointer"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -2105,14 +2106,14 @@ export default function MemindaApp() {
                           </p>
 
                           {item.reservation && (
-                            <div className="mt-3.5 rounded-2xl bg-indigo-50/90 border border-indigo-200 p-3">
+                            <div className="mt-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200 p-3">
                               <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-start gap-2 text-xs text-indigo-950 min-w-0">
-                                  <CheckCircle2 className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+                                <div className="flex items-start gap-2 text-xs text-emerald-950 min-w-0">
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                                   <div className="min-w-0">
-                                    <span className="text-indigo-700 block truncate">
+                                    <span className="text-emerald-800 block truncate">
                                       {t.reservedBy}{" "}
-                                      <strong className="text-indigo-950">
+                                      <strong className="text-emerald-950">
                                         {getReservationDisplayName(item)}
                                       </strong>
                                     </span>
@@ -2127,7 +2128,7 @@ export default function MemindaApp() {
                                 {canUnreserve && (
                                   <button
                                     onClick={() => handleUnreserve(item)}
-                                    className="text-[11px] font-bold text-rose-600 hover:text-rose-800 underline shrink-0 cursor-pointer"
+                                    className="text-[11px] font-bold text-[#FF5A5F] hover:text-rose-800 underline shrink-0 cursor-pointer"
                                   >
                                     {t.unreserveBtn}
                                   </button>
@@ -2148,14 +2149,14 @@ export default function MemindaApp() {
                                 setReserveName(currentUser.name);
                               }
                             }}
-                            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 hover:bg-rose-600 text-white px-4 py-3 text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer"
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-4 py-3 text-xs sm:text-sm font-extrabold shadow-sm shadow-[#FF5A5F]/20 transition cursor-pointer"
                           >
                             <Gift className="h-4 w-4" />
                             <span>{t.reserveGiftBtn}</span>
                           </button>
                         ) : (
-                          <div className="w-full inline-flex items-center justify-center gap-1.5 rounded-2xl bg-indigo-100/80 text-indigo-900 px-4 py-2.5 text-xs font-bold">
-                            <Lock className="h-3.5 w-3.5 text-indigo-600" />
+                          <div className="w-full inline-flex items-center justify-center gap-1.5 rounded-2xl bg-emerald-100/80 text-emerald-900 px-4 py-2.5 text-xs font-extrabold">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                             <span>{t.reservedBadge}</span>
                           </div>
                         )}
