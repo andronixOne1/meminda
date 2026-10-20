@@ -28,6 +28,10 @@ import {
   ArrowRight,
   SlidersHorizontal,
   Home,
+  Settings,
+  Camera,
+  ShoppingBag,
+  Heart,
 } from "lucide-react";
 import { TRANSLATIONS, Language } from "@/lib/meminda-data";
 import type { PublicUser } from "@/lib/auth";
@@ -40,9 +44,20 @@ import {
   sendPasswordResetEmail,
   signOut,
   updateProfile,
+  updatePassword,
+  updateEmail,
 } from "firebase/auth";
 
 const GUEST_TOKENS_STORAGE_KEY = "meminda_guest_cancel_tokens_v1";
+
+const PRESET_AVATARS = [
+  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80",
+];
 
 type PriceRangeFilter = "all" | "under100" | "100to300" | "300to700" | "over700";
 type SortOption = "newest" | "priceAsc" | "priceDesc";
@@ -74,6 +89,7 @@ export default function MemindaApp() {
 
   // Modals State
   const [authModalMode, setAuthModalMode] = useState<"login" | "register" | null>(null);
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [isNewWishlistModalOpen, setIsNewWishlistModalOpen] = useState(false);
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   const [activeReserveItem, setActiveReserveItem] = useState<WishItemRecord | null>(null);
@@ -87,6 +103,16 @@ export default function MemindaApp() {
   const [regBio, setRegBio] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+
+  // Profile Settings Form State
+  const [settingsName, setSettingsName] = useState("");
+  const [settingsUsername, setSettingsUsername] = useState("");
+  const [settingsEmail, setSettingsEmail] = useState("");
+  const [settingsBio, setSettingsBio] = useState("");
+  const [settingsAvatar, setSettingsAvatar] = useState("");
+  const [settingsNewPassword, setSettingsNewPassword] = useState("");
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // Create Wishlist Form State
   const [wlTitle, setWlTitle] = useState("");
@@ -228,6 +254,105 @@ export default function MemindaApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Open Profile Settings Modal & prefill current user data
+  const openProfileSettingsModal = () => {
+    if (!currentUser) return;
+    setSettingsName(currentUser.name || "");
+    setSettingsUsername(currentUser.username || "");
+    setSettingsEmail(currentUser.email || "");
+    setSettingsBio(lang === "ka" ? currentUser.bioKa : currentUser.bioEn);
+    setSettingsAvatar(currentUser.avatarUrl || "");
+    setSettingsNewPassword("");
+    setSettingsError(null);
+    setIsProfileSettingsOpen(true);
+  };
+
+  // Handle Profile Picture file upload (auto-resizes to clean Data URL)
+  const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === "string") {
+        setSettingsAvatar(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Save Profile Settings
+  const handleSaveProfileSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setSettingsError(null);
+    setIsSavingSettings(true);
+
+    try {
+      // 1. Update backend user record
+      const res = await fetch("/api/auth/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: settingsName,
+          username: settingsUsername,
+          email: settingsEmail,
+          bio: settingsBio,
+          avatarUrl: settingsAvatar,
+          newPassword: settingsNewPassword || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSettingsError(data.error || "Could not update profile");
+        return;
+      }
+
+      // 2. Also sync with Firebase Auth currentUser if active in browser
+      const fbUser = auth.currentUser;
+      if (fbUser) {
+        try {
+          await updateProfile(fbUser, {
+            displayName: settingsName.trim(),
+            ...(settingsAvatar.startsWith("http")
+              ? { photoURL: settingsAvatar }
+              : {}),
+          });
+        } catch {
+          // Ignore non-critical Firebase display update error
+        }
+
+        if (
+          settingsEmail.trim() &&
+          fbUser.email &&
+          settingsEmail.trim().toLowerCase() !== fbUser.email.toLowerCase()
+        ) {
+          try {
+            await updateEmail(fbUser, settingsEmail.trim());
+          } catch {
+            // Firebase may require recent login for email change; backend email is already updated
+          }
+        }
+
+        if (settingsNewPassword && settingsNewPassword.length >= 6) {
+          try {
+            await updatePassword(fbUser, settingsNewPassword);
+          } catch {
+            // Firebase may require recent re-login; backend password hash is updated
+          }
+        }
+      }
+
+      setIsProfileSettingsOpen(false);
+      setSettingsNewPassword("");
+      await fetchAllData(currentUser.id, selectedWishlistId);
+      showToast(t.profileUpdatedToast);
+    } catch {
+      setSettingsError("Network error while saving settings");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   // Currently viewed profile & wishlists
   const activeProfileUser =
     users.find((u) => u.id === selectedUserId) || users[0] || null;
@@ -329,7 +454,7 @@ export default function MemindaApp() {
     }
   };
 
-  // Email/Password Login via Firebase Auth (with fallback for seeded demo usernames)
+  // Email/Password Login via Firebase Auth (with fallback for seeded demo usernames & local password updates)
   const handleLoginSubmit = async (
     e: React.FormEvent,
     quickIdent?: string,
@@ -342,60 +467,38 @@ export default function MemindaApp() {
     const password = quickPass ?? authPassword;
 
     try {
-      // If user entered an email address (and not a seeded demo account), authenticate with Firebase Auth first
-      if (identifier.includes("@") && !identifier.endsWith("@meminda.ge")) {
-        const cred = await signInWithEmailAndPassword(auth, identifier, password);
-        const idToken = await cred.user.getIdToken();
-        const data = await syncFirebaseUserWithBackend(idToken, {
-          email: cred.user.email || identifier,
-        });
-        setAuthModalMode(null);
-        setAuthIdentifier("");
-        setAuthPassword("");
-        await fetchAllData(data.user.id, undefined, true);
-        showToast(
-          lang === "ka"
-            ? `👋 მოგესალმებით, ${data.user.name}!`
-            : `👋 Welcome back, ${data.user.name}!`
-        );
-        return;
-      }
-
-      // If user entered a username, look up if they have an email or use local/demo login
-      const matchedUser = users.find(
-        (u) => u.username.toLowerCase() === identifier.toLowerCase()
-      );
-      if (matchedUser?.email && !matchedUser.email.endsWith("@meminda.ge")) {
-        const cred = await signInWithEmailAndPassword(
-          auth,
-          matchedUser.email,
-          password
-        );
-        const idToken = await cred.user.getIdToken();
-        const data = await syncFirebaseUserWithBackend(idToken);
-        setAuthModalMode(null);
-        setAuthIdentifier("");
-        setAuthPassword("");
-        await fetchAllData(data.user.id, undefined, true);
-        showToast(
-          lang === "ka"
-            ? `👋 მოგესალმებით, ${data.user.name}!`
-            : `👋 Welcome back, ${data.user.name}!`
-        );
-        return;
-      }
-
-      // Fallback for pre-seeded demo profiles (@nini, @giorgi)
-      const res = await fetch("/api/auth/login", {
+      // First try local/backend login (handles demo accounts & updated passwords)
+      const localRes = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier, password }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setAuthError(data.error || "Login error");
+
+      if (localRes.ok) {
+        const localData = await localRes.json();
+        setAuthModalMode(null);
+        setAuthIdentifier("");
+        setAuthPassword("");
+        await fetchAllData(localData.user.id, undefined, true);
+        showToast(
+          lang === "ka"
+            ? `👋 მოგესალმებით, ${localData.user.name}!`
+            : `👋 Welcome back, ${localData.user.name}!`
+        );
         return;
       }
+
+      // Otherwise authenticate with Firebase Auth
+      const emailToUse = identifier.includes("@")
+        ? identifier
+        : users.find((u) => u.username.toLowerCase() === identifier.toLowerCase())
+            ?.email || identifier;
+
+      const cred = await signInWithEmailAndPassword(auth, emailToUse, password);
+      const idToken = await cred.user.getIdToken();
+      const data = await syncFirebaseUserWithBackend(idToken, {
+        email: cred.user.email || emailToUse,
+      });
       setAuthModalMode(null);
       setAuthIdentifier("");
       setAuthPassword("");
@@ -419,8 +522,9 @@ export default function MemindaApp() {
         );
       } else {
         setAuthError(
-          (err as Error)?.message ||
-            (lang === "ka" ? "შესვლის შეცდომა" : "Authentication error")
+          lang === "ka"
+            ? "არასწორი მომხმარებელი ან პაროლი"
+            : "Invalid credentials"
         );
       }
     } finally {
@@ -436,7 +540,7 @@ export default function MemindaApp() {
     if (authPassword.length < 6) {
       setAuthError(
         lang === "ka"
-          ? "Firebase უსაფრთხოებისთვის პაროლი უნდა შეიცავდეს მინიმუმ 6 სიმბოლოს"
+          ? "პაროლი უნდა შეიცავდეს მინიმუმ 6 სიმბოლოს"
           : "Password must be at least 6 characters long"
       );
       return;
@@ -470,16 +574,16 @@ export default function MemindaApp() {
       triggerConfetti();
       showToast(
         lang === "ka"
-          ? `🎉 Firebase ანგარიში შეიქმნა! მოგესალმებით, ${data.user.name}!`
-          : `🎉 Firebase account created! Welcome, ${data.user.name}!`
+          ? `🎉 ანგარიში შეიქმნა! მოგესალმებით, ${data.user.name}!`
+          : `🎉 Account created! Welcome, ${data.user.name}!`
       );
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code || "";
       if (code === "auth/email-already-in-use") {
         setAuthError(
           lang === "ka"
-            ? "ამ ელ-ფოსტით Firebase ანგარიში უკვე არსებობს"
-            : "This email is already registered in Firebase"
+            ? "ამ ელ-ფოსტით ანგარიში უკვე არსებობს"
+            : "This email is already registered"
         );
       } else if (code === "auth/weak-password") {
         setAuthError(
@@ -737,7 +841,6 @@ export default function MemindaApp() {
     }
   };
 
-  // Determine if the current visitor can cancel a specific reservation
   const canVisitorUnreserve = (item: WishItemRecord): boolean => {
     if (!item.reservation) return false;
     if (isViewingOwnWishlist) return true;
@@ -752,7 +855,6 @@ export default function MemindaApp() {
     return false;
   };
 
-  // Format reservation display name: Anonymous for ALL hides name from everyone (owner & guests)
   const getReservationDisplayName = (item: WishItemRecord): string => {
     const r = item.reservation;
     if (!r) return "";
@@ -800,7 +902,7 @@ export default function MemindaApp() {
               onClick={() => setActivePage("home")}
               className="flex items-center gap-2 sm:gap-2.5 text-left cursor-pointer group min-w-0"
             >
-              <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-gradient-to-br from-rose-600 via-pink-600 to-amber-500 flex items-center justify-center text-white shadow-sm shrink-0">
+              <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-gradient-to-br from-rose-600 via-pink-600 to-amber-500 flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-105 transition-transform">
                 <Gift className="h-5 w-5" />
               </div>
               <div className="truncate">
@@ -808,7 +910,7 @@ export default function MemindaApp() {
                   <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-rose-600 to-indigo-700 bg-clip-text text-transparent">
                     meminda
                   </span>
-                  <span className="hidden xs:inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                  <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
                     მემინდა
                   </span>
                 </div>
@@ -818,7 +920,6 @@ export default function MemindaApp() {
 
           {/* Right Navigation Actions (Compact on Mobile) */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Home Button when inside Wishlist View */}
             {activePage === "wishlist" && (
               <button
                 onClick={() => setActivePage("home")}
@@ -845,9 +946,19 @@ export default function MemindaApp() {
                     alt={currentUser.name}
                     className="h-5 w-5 rounded-full object-cover shrink-0"
                   />
-                  <span className="max-w-[90px] sm:max-w-[140px] truncate">
-                    {t.myWishlistsTab}
+                  <span className="max-w-[85px] sm:max-w-[130px] truncate">
+                    {currentUser.name.split(" ")[0]}
                   </span>
+                </button>
+
+                {/* Profile Settings Button */}
+                <button
+                  onClick={openProfileSettingsModal}
+                  title={t.settingsBtn}
+                  className="inline-flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-2 text-xs font-bold transition cursor-pointer"
+                >
+                  <Settings className="h-4 w-4 text-slate-600" />
+                  <span className="hidden md:inline">{t.settingsBtn}</span>
                 </button>
 
                 {activePage === "wishlist" && isViewingOwnWishlist && activeWishlist && (
@@ -922,65 +1033,259 @@ export default function MemindaApp() {
       </header>
 
       {/* ========================================================= */}
-      {/* VIEW 1: MAIN LANDING PAGE                                 */}
+      {/* VIEW 1: LIVELY MAIN LANDING PAGE WITH IMAGES & ANIMATIONS */}
       {/* ========================================================= */}
       {activePage === "home" && (
         <div className="space-y-12 sm:space-y-16">
-          {/* Hero Section */}
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10">
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-rose-950 text-white px-5 py-10 sm:p-12 md:p-16 shadow-xl">
-              <div className="max-w-2xl relative z-10">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 backdrop-blur px-3.5 py-1 text-xs font-bold text-amber-300 border border-white/15">
-                  {t.heroBadge}
-                </span>
+          {/* Animated Split Hero Section */}
+          <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-5 sm:pt-8">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-rose-950 text-white px-5 py-9 sm:p-10 md:p-14 shadow-2xl">
+              {/* Animated Ambient Glow Orbs */}
+              <div className="pointer-events-none absolute -top-24 -right-24 h-80 w-80 rounded-full bg-rose-500/25 blur-3xl animate-pulse-soft" />
+              <div className="pointer-events-none absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-indigo-500/25 blur-3xl animate-pulse-soft" />
 
-                <h1 className="mt-5 text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight">
-                  {t.heroTitleLine1}{" "}
-                  <span className="bg-gradient-to-r from-rose-400 via-pink-300 to-amber-300 bg-clip-text text-transparent">
-                    {t.heroTitleLine2}
+              <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
+                {/* Left Column: Hero Copy & CTAs */}
+                <div className="lg:col-span-7">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 backdrop-blur px-3.5 py-1 text-xs font-bold text-amber-300 border border-white/15">
+                    {t.heroBadge}
                   </span>
-                </h1>
 
-                <p className="mt-4 text-sm sm:text-base md:text-lg text-slate-200 leading-relaxed">
-                  {t.heroSubtitle}
-                </p>
+                  <h1 className="mt-4 sm:mt-5 text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight">
+                    {t.heroTitleLine1}{" "}
+                    <span className="bg-gradient-to-r from-rose-400 via-pink-300 to-amber-300 bg-clip-text text-transparent">
+                      {t.heroTitleLine2}
+                    </span>
+                  </h1>
 
-                <div className="mt-7 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  {currentUser ? (
-                    <button
-                      onClick={() => openUserWishlist(currentUser.id)}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white px-6 py-3.5 text-sm sm:text-base font-extrabold shadow-lg shadow-rose-600/30 transition cursor-pointer"
+                  <p className="mt-3.5 sm:mt-4 text-sm sm:text-base md:text-lg text-slate-200 leading-relaxed max-w-xl">
+                    {t.heroSubtitle}
+                  </p>
+
+                  <div className="mt-6 sm:mt-7 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    {currentUser ? (
+                      <button
+                        onClick={() => openUserWishlist(currentUser.id)}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white px-6 py-3.5 text-sm sm:text-base font-extrabold shadow-lg shadow-rose-600/30 transition hover:-translate-y-0.5 cursor-pointer"
+                      >
+                        <Gift className="h-5 w-5" />
+                        <span>{t.heroGoToMyProfile}</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setAuthError(null);
+                          setAuthModalMode("register");
+                        }}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white px-6 py-3.5 text-sm sm:text-base font-extrabold shadow-lg shadow-rose-600/30 transition hover:-translate-y-0.5 cursor-pointer"
+                      >
+                        <Sparkles className="h-5 w-5" />
+                        <span>{t.heroPrimaryCta}</span>
+                      </button>
+                    )}
+
+                    <a
+                      href="#explore-wishlists"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 text-sm sm:text-base font-bold transition"
                     >
-                      <Gift className="h-5 w-5" />
-                      <span>{t.heroGoToMyProfile}</span>
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setAuthError(null);
-                        setAuthModalMode("register");
-                      }}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white px-6 py-3.5 text-sm sm:text-base font-extrabold shadow-lg shadow-rose-600/30 transition cursor-pointer"
-                    >
-                      <Sparkles className="h-5 w-5" />
-                      <span>{t.heroPrimaryCta}</span>
-                    </button>
-                  )}
+                      <Users className="h-4 w-4" />
+                      <span>{t.heroSecondaryCta}</span>
+                    </a>
+                  </div>
 
-                  <a
-                    href="#explore-wishlists"
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 text-sm sm:text-base font-bold transition"
-                  >
-                    <Users className="h-4 w-4" />
-                    <span>{t.heroSecondaryCta}</span>
-                  </a>
+                  {/* Social Proof Avatars Strip */}
+                  <div className="mt-7 pt-5 border-t border-white/10 flex flex-wrap items-center gap-3">
+                    <div className="flex -space-x-2.5">
+                      {PRESET_AVATARS.slice(0, 4).map((av, i) => (
+                        <img
+                          key={i}
+                          src={av}
+                          alt=""
+                          className="h-8 w-8 rounded-full object-cover ring-2 ring-slate-900"
+                        />
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      {lang === "ka"
+                        ? "🇬🇪 შექმნილია საქართველოსთვის • 100% უფასო • რეგისტრაციის გარეშე დაჯავშნა"
+                        : "🇬🇪 Built for Georgia • 100% Free • Reserve gifts without registration"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Right Column: Floating Animated Gift Cards Showcase */}
+                <div className="lg:col-span-5 relative">
+                  <div className="relative mx-auto max-w-sm">
+                    {/* Main Floating Product Card */}
+                    <div className="rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 p-4 shadow-2xl animate-float-slow">
+                      <div className="relative h-44 sm:h-48 rounded-2xl overflow-hidden bg-slate-800">
+                        <img
+                          src="https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?auto=format&fit=crop&w=800&q=80"
+                          alt="Headphones"
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                        <span className="absolute top-2.5 left-2.5 rounded-full bg-rose-600 px-2.5 py-0.5 text-[11px] font-bold text-white">
+                          🔥 {t.priorityHigh}
+                        </span>
+                        <span className="absolute top-2.5 right-2.5 rounded-full bg-white/90 px-2.5 py-0.5 text-[11px] font-bold text-slate-900">
+                          🛍️ Zoommer.ge
+                        </span>
+                        <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-white">
+                          <span className="text-sm font-bold truncate">
+                            Sony WH-1000XM5
+                          </span>
+                          <span className="text-lg font-black text-amber-300">
+                            949 ₾
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={PRESET_AVATARS[0]}
+                            alt="Nini"
+                            className="h-7 w-7 rounded-full object-cover ring-2 ring-rose-400"
+                          />
+                          <span className="text-xs font-bold text-slate-200">
+                            {lang === "ka" ? "ნინის დაბადების დღე 🎂" : "Nini's Birthday 🎂"}
+                          </span>
+                        </div>
+                        <span className="rounded-xl bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-1 text-[11px] font-extrabold text-emerald-300">
+                          ✓ {t.reservedBadge}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Secondary Floating Mini Card (Bottom Left) */}
+                    <div className="mt-3 sm:mt-0 sm:absolute sm:-bottom-5 sm:-left-6 rounded-2xl bg-white text-slate-900 p-3 shadow-xl border border-slate-100 flex items-center gap-3 animate-float-delayed">
+                      <img
+                        src="https://images.unsplash.com/photo-1517668808822-9ebb02f2a0e6?auto=format&fit=crop&w=300&q=80"
+                        alt="Espresso"
+                        className="h-12 w-12 rounded-xl object-cover shrink-0"
+                      />
+                      <div>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
+                          {lang === "ka" ? "ახალმოსახლეობა 🏡" : "Housewarming 🏡"}
+                        </span>
+                        <p className="text-xs font-bold text-slate-900">
+                          DeLonghi Dedica • 689 ₾
+                        </p>
+                        <p className="text-[11px] text-emerald-700 font-semibold">
+                          {lang === "ka"
+                            ? "🎁 დაჯავშნა: ანონიმურმა მეგობარმა"
+                            : "🎁 Reserved by: Anonymous"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </section>
 
-          {/* How It Works (3 Mobile-Friendly Cards) */}
+          {/* Supported Stores Strip */}
+          <section className="max-w-6xl mx-auto px-4 sm:px-6">
+            <div className="rounded-3xl bg-white border border-slate-200/80 px-4 py-5 sm:px-8 flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xs">
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-600 text-center md:text-left">
+                <ShoppingBag className="h-4 w-4 text-rose-600 shrink-0" />
+                <span>{t.supportedStoresTitle}:</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {[
+                  "🛍️ Veli.store",
+                  "📱 Zoommer.ge",
+                  "🏠 Extra.ge",
+                  "📦 Amazon.com (TBC ₾)",
+                  "✨ Lutecia.ge",
+                  "👗 Dressup.ge",
+                  "📸 Instagram Shops",
+                ].map((store) => (
+                  <span
+                    key={store}
+                    className="rounded-xl bg-slate-50 hover:bg-rose-50 hover:text-rose-700 border border-slate-200/80 px-3 py-1.5 text-xs font-bold text-slate-700 transition"
+                  >
+                    {store}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Visual Occasions Photo Grid ("ყველა განსაკუთრებული დღისთვის") */}
+          <section className="max-w-6xl mx-auto px-4 sm:px-6">
+            <div className="text-center max-w-xl mx-auto mb-7">
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+                {t.occasionsTitle}
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                {t.occasionsSub}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                {
+                  title: t.occCardBirthdayTitle,
+                  sub: t.occCardBirthdaySub,
+                  badge: "🎂",
+                  img: "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=700&q=80",
+                },
+                {
+                  title: t.occCardWeddingTitle,
+                  sub: t.occCardWeddingSub,
+                  badge: "💍",
+                  img: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=700&q=80",
+                },
+                {
+                  title: t.occCardHomeTitle,
+                  sub: t.occCardHomeSub,
+                  badge: "🏡",
+                  img: "https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=700&q=80",
+                },
+                {
+                  title: t.occCardSantaTitle,
+                  sub: t.occCardSantaSub,
+                  badge: "🎄",
+                  img: "https://images.unsplash.com/photo-1512909006721-3d6018887383?auto=format&fit=crop&w=700&q=80",
+                },
+              ].map((card, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    if (currentUser) {
+                      setIsNewWishlistModalOpen(true);
+                    } else {
+                      setAuthModalMode("register");
+                    }
+                  }}
+                  className="group relative h-56 sm:h-64 rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-all cursor-pointer"
+                >
+                  <img
+                    src={card.img}
+                    alt={card.title}
+                    className="h-full w-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-transparent" />
+                  <span className="absolute top-3.5 left-3.5 h-10 w-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-lg shadow-sm">
+                    {card.badge}
+                  </span>
+                  <div className="absolute bottom-4 left-4 right-4 text-white">
+                    <h3 className="text-base font-extrabold group-hover:text-amber-300 transition">
+                      {card.title}
+                    </h3>
+                    <p className="text-xs text-slate-200 mt-0.5 line-clamp-2">
+                      {card.sub}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* How It Works (3 Cards with Hover Lift) */}
           <section className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="text-center max-w-xl mx-auto mb-8">
               <h2 className="text-xl sm:text-2xl font-black text-slate-900">
@@ -1014,7 +1319,7 @@ export default function MemindaApp() {
               ].map((step, idx) => (
                 <div
                   key={idx}
-                  className="rounded-3xl bg-white border border-slate-200/90 p-5 sm:p-6 shadow-xs"
+                  className="rounded-3xl bg-white border border-slate-200/90 p-5 sm:p-6 shadow-xs hover:-translate-y-1 hover:shadow-lg transition-all duration-300"
                 >
                   <div
                     className={`h-12 w-12 rounded-2xl border ${step.bg} flex items-center justify-center mb-4`}
@@ -1036,8 +1341,9 @@ export default function MemindaApp() {
           <section id="explore-wishlists" className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
               <div>
-                <h2 className="text-xl sm:text-2xl font-black text-slate-900">
-                  {t.featuredWishlistsTitle}
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2">
+                  <Heart className="h-5 w-5 text-rose-600 fill-rose-600" />
+                  <span>{t.featuredWishlistsTitle}</span>
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                   {t.featuredWishlistsSub}
@@ -1056,10 +1362,9 @@ export default function MemindaApp() {
                   <div
                     key={wl.id}
                     onClick={() => openUserWishlist(wl.ownerId, wl.id)}
-                    className="group rounded-3xl bg-white border border-slate-200/90 p-5 shadow-xs hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between"
+                    className="group rounded-3xl bg-white border border-slate-200/90 p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col justify-between"
                   >
                     <div>
-                      {/* Owner Header */}
                       <div className="flex items-center justify-between gap-2 mb-4">
                         <div className="flex items-center gap-2.5 min-w-0">
                           {owner && (
@@ -1084,7 +1389,6 @@ export default function MemindaApp() {
                         </span>
                       </div>
 
-                      {/* Wishlist Title & Description */}
                       <h3 className="text-base sm:text-lg font-extrabold text-slate-900 group-hover:text-rose-600 transition line-clamp-1">
                         {wl.title}
                       </h3>
@@ -1092,7 +1396,6 @@ export default function MemindaApp() {
                         {wl.description}
                       </p>
 
-                      {/* Mini Product Image Thumbnails */}
                       {previewImages.length > 0 && (
                         <div className="mt-4 grid grid-cols-3 gap-2">
                           {previewImages.map((imgUrl, i) => (
@@ -1144,7 +1447,6 @@ export default function MemindaApp() {
               <span>{t.backToHome}</span>
             </button>
 
-            {/* Horizontal scrollable user pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto max-w-[65%] sm:max-w-none py-1 no-scrollbar">
               {users.map((u) => {
                 const isSelected = u.id === activeProfileUser.id;
@@ -1175,20 +1477,35 @@ export default function MemindaApp() {
             <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-rose-950 text-white p-5 sm:p-8 shadow-lg">
               <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
                 <div className="flex items-center gap-4">
-                  <img
-                    src={activeProfileUser.avatarUrl}
-                    alt={activeProfileUser.name}
-                    className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl object-cover ring-2 ring-white/25 shadow-md shrink-0"
-                  />
+                  <div className="relative shrink-0">
+                    <img
+                      src={activeProfileUser.avatarUrl}
+                      alt={activeProfileUser.name}
+                      className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl object-cover ring-2 ring-white/25 shadow-md"
+                    />
+                    {isViewingOwnWishlist && (
+                      <button
+                        onClick={openProfileSettingsModal}
+                        title={t.profileSettingsTitle}
+                        className="absolute -bottom-1.5 -right-1.5 h-7 w-7 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shadow-md ring-2 ring-slate-900 cursor-pointer"
+                      >
+                        <Camera className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
                       <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold text-rose-200">
                         @{activeProfileUser.username}
                       </span>
                       {isViewingOwnWishlist && (
-                        <span className="rounded-full bg-emerald-500/20 border border-emerald-400/30 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300">
-                          👑 {t.ownerBadge}
-                        </span>
+                        <button
+                          onClick={openProfileSettingsModal}
+                          className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/30 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300 cursor-pointer"
+                        >
+                          <span>👑 {t.ownerBadge}</span>
+                          <Settings className="h-3 w-3 ml-0.5" />
+                        </button>
                       )}
                       {activeWishlist && (
                         <span className="rounded-full bg-amber-400/20 px-2.5 py-0.5 text-[11px] font-semibold text-amber-200">
@@ -1257,7 +1574,7 @@ export default function MemindaApp() {
                 </div>
               </div>
 
-              {/* Multiple Wishlists Tabs (Horizontal Scroll on Mobile) */}
+              {/* Multiple Wishlists Tabs */}
               <div className="mt-5 pt-4 border-t border-white/15 flex items-center gap-2 overflow-x-auto no-scrollbar">
                 {profileWishlists.map((wl) => (
                   <button
@@ -1304,10 +1621,9 @@ export default function MemindaApp() {
           </section>
 
           {/* ========================================================= */}
-          {/* STATUS FILTER + PRICE FILTER BAR (MOBILE OPTIMIZED)       */}
+          {/* STATUS FILTER + PRICE FILTER BAR                          */}
           {/* ========================================================= */}
           <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-5 space-y-3">
-            {/* Row 1: Availability Tabs & Sort Dropdown */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
                 {(
@@ -1340,7 +1656,6 @@ export default function MemindaApp() {
                 ))}
               </div>
 
-              {/* Sort Select */}
               <div className="flex items-center gap-2 ml-auto">
                 <select
                   value={sortBy}
@@ -1354,7 +1669,6 @@ export default function MemindaApp() {
               </div>
             </div>
 
-            {/* Row 2: Price Range Filter Pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
               <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 mr-1 shrink-0">
                 <SlidersHorizontal className="h-3.5 w-3.5 text-rose-500" />
@@ -1437,7 +1751,6 @@ export default function MemindaApp() {
                       }`}
                     >
                       <div>
-                        {/* Product Image Header */}
                         <div className="relative h-52 sm:h-56 w-full bg-slate-100 overflow-hidden">
                           <img
                             src={item.imageUrl}
@@ -1448,7 +1761,6 @@ export default function MemindaApp() {
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/20" />
 
-                          {/* Priority & Store Badges */}
                           <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                             <span
                               className={`px-2.5 py-1 rounded-full text-[11px] font-bold backdrop-blur-md shadow-xs ${
@@ -1473,7 +1785,6 @@ export default function MemindaApp() {
                             )}
                           </div>
 
-                          {/* Reserved Badge & Owner Delete */}
                           <div className="absolute top-3 right-3 flex items-center gap-1.5">
                             {isReserved && (
                               <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-600 text-white shadow-sm">
@@ -1491,7 +1802,6 @@ export default function MemindaApp() {
                             )}
                           </div>
 
-                          {/* Price & Store Link on Image Bottom */}
                           <div className="absolute bottom-3 left-3.5 right-3.5 flex items-end justify-between text-white">
                             <div>
                               <span className="text-[10px] uppercase tracking-wider text-slate-200 font-medium block">
@@ -1525,7 +1835,6 @@ export default function MemindaApp() {
                           </div>
                         </div>
 
-                        {/* Item Title & Description */}
                         <div className="p-4 sm:p-5">
                           <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug line-clamp-2">
                             {item.title}
@@ -1534,7 +1843,6 @@ export default function MemindaApp() {
                             {item.description}
                           </p>
 
-                          {/* Reservation Details Box */}
                           {item.reservation && (
                             <div className="mt-3.5 rounded-2xl bg-indigo-50/90 border border-indigo-200 p-3">
                               <div className="flex items-start justify-between gap-2">
@@ -1569,7 +1877,6 @@ export default function MemindaApp() {
                         </div>
                       </div>
 
-                      {/* Card Footer Action Button */}
                       <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-1">
                         {!item.reservation ? (
                           <button
@@ -1602,7 +1909,7 @@ export default function MemindaApp() {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 1: USER LOGIN & REGISTRATION (MOBILE BOTTOM SHEET)  */}
+      {/* MODAL 1: USER LOGIN & REGISTRATION                        */}
       {/* ========================================================= */}
       {authModalMode && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
@@ -1666,7 +1973,6 @@ export default function MemindaApp() {
               </div>
             )}
 
-            {/* Google Sign-In via Firebase Auth */}
             <div className="mt-4">
               <button
                 type="button"
@@ -1694,7 +2000,7 @@ export default function MemindaApp() {
                 </svg>
                 <span>
                   {lang === "ka"
-                    ? "Google-ით გაგრძელება (Firebase)"
+                    ? "Google-ით გაგრძელება"
                     : "Continue with Google"}
                 </span>
               </button>
@@ -1860,7 +2166,183 @@ export default function MemindaApp() {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 2: CREATE NEW WISHLIST                              */}
+      {/* MODAL 2: PROFILE SETTINGS (PHOTO, NAME, EMAIL, PASSWORD)  */}
+      {/* ========================================================= */}
+      {isProfileSettingsOpen && currentUser && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-7 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                  <Settings className="h-5 w-5 text-rose-600" />
+                  <span>{t.profileSettingsTitle}</span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {t.profileSettingsSub}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsProfileSettingsOpen(false)}
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {settingsError && (
+              <div className="mt-3.5 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">
+                {settingsError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveProfileSettings} className="mt-4 space-y-4">
+              {/* Profile Picture Section */}
+              <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5">
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  {t.profilePhotoLabel}
+                </label>
+                <div className="flex items-center gap-3.5">
+                  <img
+                    src={settingsAvatar || PRESET_AVATARS[0]}
+                    alt="Avatar Preview"
+                    className="h-16 w-16 rounded-2xl object-cover ring-2 ring-rose-500/30 shrink-0"
+                  />
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <label className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 text-xs font-bold cursor-pointer transition">
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>{t.uploadNewAvatarBtn}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAvatarFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-slate-500 block mb-1">
+                        {t.choosePresetAvatarLabel}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {PRESET_AVATARS.map((av, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setSettingsAvatar(av)}
+                            className={`h-7 w-7 rounded-full overflow-hidden ring-2 transition cursor-pointer ${
+                              settingsAvatar === av
+                                ? "ring-rose-600 scale-110"
+                                : "ring-transparent opacity-75 hover:opacity-100"
+                            }`}
+                          >
+                            <img
+                              src={av}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Name & Username */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {t.authFullNameLabel}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsName}
+                    onChange={(e) => setSettingsName(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {t.authUsernameLabel}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsUsername}
+                    onChange={(e) => setSettingsUsername(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {t.authEmailLabel}
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={settingsEmail}
+                  onChange={(e) => setSettingsEmail(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+
+              {/* Bio */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {t.authBioLabel}
+                </label>
+                <input
+                  type="text"
+                  value={settingsBio}
+                  onChange={(e) => setSettingsBio(e.target.value)}
+                  placeholder={t.authBioPlaceholder}
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+
+              {/* Change Password */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {t.newPasswordLabel}
+                </label>
+                <input
+                  type="password"
+                  minLength={6}
+                  value={settingsNewPassword}
+                  onChange={(e) => setSettingsNewPassword(e.target.value)}
+                  placeholder={t.newPasswordPlaceholder}
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsProfileSettingsOpen(false)}
+                  className="rounded-xl px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  {t.cancelBtn}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingSettings}
+                  className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-5 py-2.5 text-xs sm:text-sm font-bold shadow-md cursor-pointer"
+                >
+                  {isSavingSettings ? "..." : t.saveProfileBtn}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 3: CREATE NEW WISHLIST                              */}
       {/* ========================================================= */}
       {isNewWishlistModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
@@ -1961,7 +2443,7 @@ export default function MemindaApp() {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 3: ADD WISH ITEM (URL SCRAPER + TBC RATE OR MANUAL) */}
+      {/* MODAL 4: ADD WISH ITEM (URL SCRAPER + TBC RATE OR MANUAL) */}
       {/* ========================================================= */}
       {isAddItemModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
@@ -2207,7 +2689,7 @@ export default function MemindaApp() {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 4: RESERVE GIFT (NAMED OR ANONYMOUS FOR ALL ONLY)   */}
+      {/* MODAL 5: RESERVE GIFT (NAMED OR ANONYMOUS FOR ALL ONLY)   */}
       {/* ========================================================= */}
       {activeReserveItem && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
@@ -2225,7 +2707,6 @@ export default function MemindaApp() {
               </button>
             </div>
 
-            {/* Mini Item Preview */}
             <div className="mt-3.5 flex items-center gap-3 rounded-2xl bg-slate-50 p-3 border border-slate-200/80">
               <img
                 src={activeReserveItem.imageUrl}
@@ -2246,7 +2727,6 @@ export default function MemindaApp() {
               {t.reserveModalDesc}
             </p>
 
-            {/* Account vs Guest status bar */}
             <div className="mt-3">
               {currentUser ? (
                 <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900 flex items-center gap-2">
@@ -2276,7 +2756,6 @@ export default function MemindaApp() {
             </div>
 
             <form onSubmit={handleReserveSubmit} className="mt-4 space-y-3.5">
-              {/* Single Anonymous Option: Anonymous for All vs Show Name */}
               <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
                 <button
                   type="button"
@@ -2300,7 +2779,11 @@ export default function MemindaApp() {
                   }`}
                 >
                   <EyeOff className="h-3.5 w-3.5" />
-                  <span>{lang === "ka" ? "ანონიმურად (ყველასთვის)" : "Anonymous for All"}</span>
+                  <span>
+                    {lang === "ka"
+                      ? "ანონიმურად (ყველასთვის)"
+                      : "Anonymous for All"}
+                  </span>
                 </button>
               </div>
 

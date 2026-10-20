@@ -34,3 +34,47 @@ textarea::placeholder {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+@keyframes floatSlow {
+  0%,
+  100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(1deg);
+  }
+}
+
+@keyframes floatDelayed {
+  0%,
+  100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(-1.5deg);
+  }
+}
+
+@keyframes pulseSoft {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.06);
+  }
+}
+
+.animate-float-slow {
+  animation: floatSlow 5.5s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: floatDelayed 6.5s ease-in-out 1.2s infinite;
+}
+
+.animate-pulse-soft {
+  animation: pulseSoft 7s ease-in-out infinite;
+}
