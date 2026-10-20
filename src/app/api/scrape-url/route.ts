@@ -95,6 +95,15 @@ function isBotOrErrorString(text: string | null | undefined): boolean {
   if (!text) return true;
   const lower = text.toLowerCase().trim();
   if (lower.length < 2) return true;
+  // Flag generic stub titles like "Amazon.com", "Amazon.de", "eBay", "Zara"
+  if (
+    /^amazon(\.[a-z.]{2,6})?$/i.test(lower) ||
+    lower === "amazon.com: online shopping" ||
+    lower === "robot or human?" ||
+    lower === "verify you are human"
+  ) {
+    return true;
+  }
   return (
     lower.includes("attention required") ||
     lower.includes("cloudflare") ||
@@ -103,10 +112,12 @@ function isBotOrErrorString(text: string | null | undefined): boolean {
     lower.includes("security verification") ||
     lower.includes("access denied") ||
     lower.includes("robot check") ||
+    lower.includes("automated access") ||
     lower.includes("522: connection timed out") ||
     lower.includes("403 forbidden") ||
     lower.includes("ddos-guard") ||
-    lower.includes("pardon our interruption")
+    lower.includes("pardon our interruption") ||
+    lower.includes("captcha")
   );
 }
 
@@ -137,8 +148,61 @@ function isLikelyLogoOrPlaceholder(imgUrl: string): boolean {
     lower.includes("default-share") ||
     lower.includes("og-default") ||
     lower.includes("1x1") ||
-    lower.includes("pixel")
+    lower.includes("pixel") ||
+    lower.includes("nav-sprite") ||
+    lower.includes("/sprites/") ||
+    lower.includes("transparent-pixel") ||
+    lower.includes("grey-pixel") ||
+    lower.includes("fls-na.amazon.com") ||
+    lower.includes("amazon_logo")
   );
+}
+
+/**
+ * Normalizes an Amazon product image URL to high resolution (e.g. ._AC_SL1000_.jpg)
+ */
+function upgradeAmazonImageToHiRes(imgUrl: string): string {
+  if (!imgUrl.includes("media-amazon.com/images/I/")) return imgUrl;
+  return imgUrl.replace(
+    /\._[A-Za-z0-9,_-]+_\.(jpg|jpeg|png|webp)$/i,
+    "._AC_SL1000_.$1"
+  );
+}
+
+/**
+ * Cleans noisy tracking parameters and `/ref=...` path suffixes from Amazon & international product URLs.
+ */
+function normalizeTargetProductUrl(parsedUrl: URL, isAmazon: boolean): string {
+  if (isAmazon) {
+    // Match /dp/ASIN or /gp/product/ASIN
+    const dpMatch = parsedUrl.pathname.match(
+      /^(.*?\/(?:dp|gp\/product)\/[A-Z0-9]{10})(?:\/.*)?$/i
+    );
+    if (dpMatch?.[1]) {
+      return `${parsedUrl.origin}${dpMatch[1]}`;
+    }
+  }
+  const clean = new URL(parsedUrl.toString());
+  const trackingParams = [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "fbclid",
+    "gclid",
+    "pd_rd_w",
+    "content-id",
+    "pf_rd_p",
+    "pf_rd_r",
+    "pd_rd_wg",
+    "pd_rd_r",
+    "ref_",
+  ];
+  for (const p of trackingParams) {
+    clean.searchParams.delete(p);
+  }
+  return clean.toString();
 }
 
 function extractMeta(html: string, property: string): string | null {
@@ -171,17 +235,22 @@ function detectDefaultCurrencyByDomain(hostname: string): string {
   ) {
     return "GEL";
   }
-  if (hostname.includes("amazon.co.uk") || hostname.endsWith(".co.uk")) return "GBP";
+  if (hostname.includes("amazon.co.uk") || hostname.endsWith(".co.uk"))
+    return "GBP";
   if (
     hostname.includes("amazon.de") ||
     hostname.includes("amazon.fr") ||
     hostname.includes("amazon.it") ||
     hostname.includes("amazon.es") ||
     hostname.endsWith(".de") ||
-    hostname.endsWith(".eu")
+    hostname.endsWith(".eu") ||
+    hostname.endsWith(".fr") ||
+    hostname.endsWith(".it") ||
+    hostname.endsWith(".es")
   ) {
     return "EUR";
   }
+  if (hostname.endsWith(".tr") || hostname.includes("trendyol")) return "TRY";
   return "USD";
 }
 
@@ -218,9 +287,6 @@ function parsePriceNumber(val: unknown): number | null {
 
 /**
  * Extracts clean search keywords from a product URL slug.
- * e.g. "https://alta.ge/sarbeni-biliki/urevo-foldi-mini-2-treadmill-ur9tm0063-black-p40587"
- * -> fullSlug: "Urevo Foldi Mini 2 Treadmill Ur9tm0063 Black"
- * -> coreQuery: "urevo foldi mini 2"
  */
 function extractProductSlugQueries(parsedUrl: URL): {
   readableTitle: string;
@@ -233,7 +299,6 @@ function extractProductSlugQueries(parsedUrl: URL): {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  // Pick the most descriptive segment (longest slug, or segment before /dp/ on Amazon)
   let targetSegment = "";
   const dpIdx = segments.findIndex(
     (s) => s.toLowerCase() === "dp" || s.toLowerCase() === "gp"
@@ -241,21 +306,27 @@ function extractProductSlugQueries(parsedUrl: URL): {
   if (dpIdx > 0) {
     targetSegment = segments[dpIdx - 1];
   } else {
-    // Filter out purely numeric segments like "/207233" or "/111783/130768"
-    const nonNumeric = segments.filter((s) => !/^\d+$/.test(s) && s !== "product" && s !== "details");
+    const nonNumeric = segments.filter(
+      (s) =>
+        !/^\d+$/.test(s) &&
+        !s.startsWith("ref=") &&
+        s !== "product" &&
+        s !== "details" &&
+        s !== "p" &&
+        s !== "item"
+    );
     targetSegment =
       nonNumeric[nonNumeric.length - 1] || segments[segments.length - 1] || "";
   }
 
   const cleaned = decodeURIComponent(targetSegment)
     .replace(/\.(html?|php|aspx?)$/i, "")
-    .replace(/-p\d+$/i, "") // Strip Zoommer/Alta "-p40587" suffix
+    .replace(/-p\d+$/i, "")
     .replace(/[-_]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
   const words = cleaned.split(" ").filter((w) => w.length > 1);
-  // Filter out generic Georgian transliterated category words often appended at the end
   const stopWords = new Set([
     "sarbeni",
     "biliki",
@@ -310,8 +381,12 @@ function extractFromJsonLd(html: string, baseUrl: string) {
     const typeVal = obj["@type"];
     const isProduct =
       typeVal === "Product" ||
-      (Array.isArray(typeVal) && typeVal.includes("Product")) ||
-      (typeof typeVal === "string" && typeVal.toLowerCase() === "product");
+      typeVal === "IndividualProduct" ||
+      typeVal === "ProductGroup" ||
+      (Array.isArray(typeVal) &&
+        (typeVal.includes("Product") || typeVal.includes("ProductGroup"))) ||
+      (typeof typeVal === "string" &&
+        typeVal.toLowerCase().includes("product"));
 
     if (isProduct) return obj;
 
@@ -356,8 +431,19 @@ function extractFromJsonLd(html: string, baseUrl: string) {
           if (typeof first === "string") imgCandidate = first;
           else if (first && typeof first === "object" && "url" in first) {
             imgCandidate = String((first as { url: unknown }).url);
+          } else if (
+            first &&
+            typeof first === "object" &&
+            "contentUrl" in first
+          ) {
+            imgCandidate = String(
+              (first as { contentUrl: unknown }).contentUrl
+            );
           }
-        } else if (typeof product.image === "object" && "url" in product.image) {
+        } else if (
+          typeof product.image === "object" &&
+          "url" in product.image
+        ) {
           imgCandidate = String((product.image as { url: unknown }).url);
         }
         const resolved = resolveAbsoluteUrl(imgCandidate, baseUrl);
@@ -366,10 +452,16 @@ function extractFromJsonLd(html: string, baseUrl: string) {
         }
       }
 
-      if (product.offers && !result.price) {
-        const offersList = Array.isArray(product.offers)
-          ? product.offers
-          : [product.offers];
+      const rawOffers =
+        product.offers ||
+        (Array.isArray(product.hasVariant) &&
+        product.hasVariant[0] &&
+        typeof product.hasVariant[0] === "object"
+          ? (product.hasVariant[0] as Record<string, unknown>).offers
+          : undefined);
+
+      if (rawOffers && !result.price) {
+        const offersList = Array.isArray(rawOffers) ? rawOffers : [rawOffers];
         for (const offer of offersList) {
           if (!offer || typeof offer !== "object") continue;
           const off = offer as Record<string, unknown>;
@@ -401,7 +493,6 @@ function extractFromJsonLd(html: string, baseUrl: string) {
 
 /**
  * Layer 2: Next.js __NEXT_DATA__ Extractor (Zoommer.ge, Veli.store, etc.)
- * Checks explicit product structures first so it never picks up menu/category items.
  */
 function extractFromNextData(html: string, baseUrl: string) {
   const result: {
@@ -422,8 +513,8 @@ function extractFromNextData(html: string, baseUrl: string) {
     const pageProps = nextData?.props?.pageProps;
     if (!pageProps || typeof pageProps !== "object") return result;
 
-    // 1. Check Zoommer / Alta sharePageData & initialProductData.product
-    const shareData = pageProps.sharePageData || pageProps.pageProps?.sharePageData;
+    const shareData =
+      pageProps.sharePageData || pageProps.pageProps?.sharePageData;
     const initProduct =
       pageProps.initialProductData?.product ||
       pageProps.pageProps?.initialProductData?.product ||
@@ -465,7 +556,9 @@ function extractFromNextData(html: string, baseUrl: string) {
           initProduct.imageUrl ||
           initProduct.mainImage ||
           initProduct.image ||
-          (Array.isArray(initProduct.images) ? initProduct.images[0] : undefined);
+          (Array.isArray(initProduct.images)
+            ? initProduct.images[0]
+            : undefined);
         const imgStr =
           typeof rawImg === "string"
             ? rawImg
@@ -477,7 +570,10 @@ function extractFromNextData(html: string, baseUrl: string) {
           result.image = resolved;
         }
       }
-      if (!result.description && typeof initProduct.description === "string") {
+      if (
+        !result.description &&
+        typeof initProduct.description === "string"
+      ) {
         result.description = initProduct.description
           .replace(/<[^>]+>/g, " ")
           .replace(/\s+/g, " ")
@@ -495,25 +591,48 @@ function extractFromNextData(html: string, baseUrl: string) {
  * Layer 3: Amazon Specialized Product Parser
  */
 function extractAmazonDetails(html: string, hostname: string) {
+  const pageTitleTag = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
   const productTitleMatch =
     html.match(/<span[^>]+id=["']productTitle["'][^>]*>([\s\S]*?)<\/span>/i) ||
     html.match(/<h1[^>]+id=["']title["'][^>]*>([\s\S]*?)<\/h1>/i);
-  const rawTitle = productTitleMatch?.[1]
+
+  const spanTitle = productTitleMatch?.[1]
     ? decodeHtmlEntities(productTitleMatch[1].replace(/<[^>]+>/g, "").trim())
-    : extractMeta(html, "title") || extractMeta(html, "og:title");
+    : null;
+  const fullTitleTag = pageTitleTag
+    ? decodeHtmlEntities(pageTitleTag.trim())
+        .replace(/^Amazon\.[a-z.]+\s*:\s*/i, "")
+        .replace(/\s*:\s*[^:]+$/i, "")
+        .trim()
+    : null;
+
+  // Prefer the longer, more descriptive title (e.g. "Sanrio My Melody Mascot Holder 054861" vs "Sanrio Mascot Holder")
+  let rawTitle = spanTitle || fullTitleTag || extractMeta(html, "title") || extractMeta(html, "og:title");
+  if (
+    spanTitle &&
+    fullTitleTag &&
+    !isBotOrErrorString(fullTitleTag) &&
+    fullTitleTag.length > spanTitle.length + 4
+  ) {
+    rawTitle = fullTitleTag;
+  }
 
   let image: string | null = null;
 
   const hiResMatch =
-    html.match(/"hiRes"\s*:\s*"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/i) ||
-    html.match(/"large"\s*:\s*"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/i);
+    html.match(
+      /"hiRes"\s*:\s*"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/i
+    ) ||
+    html.match(
+      /"large"\s*:\s*"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/i
+    );
   if (hiResMatch?.[1]) {
-    image = hiResMatch[1];
+    image = upgradeAmazonImageToHiRes(hiResMatch[1]);
   }
 
   if (!image) {
     const oldHires = html.match(/data-old-hires=["'](https:\/\/[^"']+)["']/i);
-    if (oldHires?.[1]) image = oldHires[1];
+    if (oldHires?.[1]) image = upgradeAmazonImageToHiRes(oldHires[1]);
   }
 
   if (!image) {
@@ -525,15 +644,17 @@ function extractAmazonDetails(html: string, hostname: string) {
       const urlMatch = decoded.match(
         /https:\/\/m\.media-amazon\.com\/images\/I\/[^"'\s\\]+/
       );
-      if (urlMatch?.[0]) image = urlMatch[0];
+      if (urlMatch?.[0]) image = upgradeAmazonImageToHiRes(urlMatch[0]);
     }
   }
 
   if (!image) {
     const landingSrc =
-      html.match(/id=["']landingImage["'][^>]+src=["'](https:\/\/[^"']+)["']/i) ||
+      html.match(
+        /id=["']landingImage["'][^>]+src=["'](https:\/\/[^"']+)["']/i
+      ) ||
       html.match(/id=["']imgBlkFront["'][^>]+src=["'](https:\/\/[^"']+)["']/i);
-    if (landingSrc?.[1]) image = landingSrc[1];
+    if (landingSrc?.[1]) image = upgradeAmazonImageToHiRes(landingSrc[1]);
   }
 
   let price: number | null = null;
@@ -552,44 +673,49 @@ function extractAmazonDetails(html: string, hostname: string) {
     else if (sym === "£" || sym === "GBP") currency = "GBP";
   }
 
-  const priceToPayMatch =
+  // 1. Check explicit hidden input & JSON price fields first (most reliable on Amazon)
+  const jsonPriceMatch =
     html.match(
-      /class=["'][^"']*priceToPay[^"']*["'][\s\S]{0,600}?<span[^>]+class=["']a-offscreen["'][^>]*>([^<]+)<\/span>/i
+      /id=["']twister-plus-price-data-price["'][^>]+value=["']([\d.]+)["']/i
     ) ||
     html.match(
-      /class=["'][^"']*apexPriceToPay[^"']*["'][\s\S]{0,600}?<span[^>]+class=["']a-offscreen["'][^>]*>([^<]+)<\/span>/i
-    );
+      /name=["']items\[0\.base\]\[customerVisiblePrice\]\[amount\]["'][^>]+value=["']([\d.]+)["']/i
+    ) ||
+    html.match(/"priceAmount"\s*:\s*([\d.]+)/i);
 
-  if (priceToPayMatch?.[1]) {
-    price = parsePriceNumber(decodeHtmlEntities(priceToPayMatch[1]));
+  if (jsonPriceMatch?.[1]) {
+    price = parsePriceNumber(jsonPriceMatch[1]);
   }
 
+  // 2. Check a-price-whole + a-price-fraction inside priceToPay / corePrice
   if (!price) {
-    const jsonPriceMatch =
-      html.match(
-        /id=["']twister-plus-price-data-price["'][^>]+value=["']([\d.]+)["']/i
-      ) ||
-      html.match(
-        /name=["']items\[0\.base\]\[customerVisiblePrice\]\[amount\]["'][^>]+value=["']([\d.]+)["']/i
-      ) ||
-      html.match(/"priceAmount"\s*:\s*([\d.]+)/i);
-
-    if (jsonPriceMatch?.[1]) {
-      price = parsePriceNumber(jsonPriceMatch[1]);
+    const wholeFractionMatch = html.match(
+      /class=["'][^"']*(?:priceToPay|apexPriceToPay)[^"']*["'][\s\S]{0,800}?class=["']a-price-whole["'][^>]*>\s*(\d[\d,]*)(?:<[^>]+>|\s|\.)*?class=["']a-price-fraction["'][^>]*>\s*(\d{2})/i
+    );
+    if (wholeFractionMatch?.[1] && wholeFractionMatch?.[2]) {
+      price = parsePriceNumber(
+        `${wholeFractionMatch[1].replace(/,/g, "")}.${wholeFractionMatch[2]}`
+      );
     }
   }
 
+  // 3. Check non-empty a-offscreen inside priceToPay or corePriceDisplay
   if (!price) {
-    const corePriceBlock = html.match(
-      /id=["'](?:corePriceDisplay_desktop_feature_div|corePrice_feature_div|apex_desktop)["'][\s\S]{0,2500}?<span[^>]+class=["'][^"']*a-offscreen[^"']*["'][^>]*>([^<]+)<\/span>/i
-    );
-    if (corePriceBlock?.[1]) {
-      price = parsePriceNumber(decodeHtmlEntities(corePriceBlock[1]));
+    const priceToPayMatch =
+      html.match(
+        /class=["'][^"']*(?:priceToPay|apexPriceToPay)[^"']*["'][\s\S]{0,600}?<span[^>]+class=["'][^"']*a-offscreen[^"']*["'][^>]*>\s*([^<\s][^<]*)\s*<\/span>/i
+      ) ||
+      html.match(
+        /id=["'](?:corePriceDisplay_desktop_feature_div|corePrice_feature_div|apex_desktop)["'][\s\S]{0,2500}?<span[^>]+class=["'][^"']*a-offscreen[^"']*["'][^>]*>\s*([$€£][\d.,]+)\s*<\/span>/i
+      );
+
+    if (priceToPayMatch?.[1]) {
+      price = parsePriceNumber(decodeHtmlEntities(priceToPayMatch[1]));
     }
   }
 
   const featureBullets = html.match(
-    /id=["']feature-bullets["'][\s\S]{0,2000}?<span[^>]+class=["']a-list-item["'][^>]*>([\s\S]*?)<\/span>/i
+    /id=["']feature-bullets["'][\s\S]{0,2500}?<span[^>]+class=["']a-list-item["'][^>]*>([\s\S]*?)<\/span>/i
   );
   const description =
     (featureBullets?.[1]
@@ -608,7 +734,7 @@ function extractAmazonDetails(html: string, hostname: string) {
 }
 
 /**
- * Layer 4: Meta & OpenGraph Price/Image Extractor
+ * Layer 4: Meta, OpenGraph & Common E-Commerce Price/Image Extractor
  */
 function extractMetaPriceAndCurrency(
   html: string,
@@ -619,6 +745,7 @@ function extractMetaPriceAndCurrency(
   const metaCurrency =
     extractMeta(html, "product:price:currency") ||
     extractMeta(html, "og:price:currency") ||
+    extractMeta(html, "twitter:data2") ||
     extractMeta(html, "priceCurrency");
   if (metaCurrency && /^[A-Za-z]{3}$/.test(metaCurrency.trim())) {
     currency = metaCurrency.trim().toUpperCase();
@@ -628,6 +755,7 @@ function extractMetaPriceAndCurrency(
     extractMeta(html, "product:price:amount") ||
     extractMeta(html, "og:price:amount") ||
     extractMeta(html, "product:sale_price:amount") ||
+    extractMeta(html, "twitter:data1") ||
     extractMeta(html, "price");
 
   if (ogPrice) {
@@ -640,7 +768,10 @@ function extractMetaPriceAndCurrency(
   const itempropPriceMatch =
     html.match(/itemprop=["']price["'][^>]+content=["']([\d.,]+)["']/i) ||
     html.match(/content=["']([\d.,]+)["'][^>]+itemprop=["']price["']/i) ||
-    html.match(/itemprop=["']price["'][^>]*>\s*([\d.,]+)\s*</i);
+    html.match(/itemprop=["']price["'][^>]*>\s*[$€£₾]?\s*([\d.,]+)\s*</i) ||
+    html.match(/data-price=["']([\d.]+)["']/i) ||
+    html.match(/"currentPrice"\s*:\s*([\d.]+)/i) ||
+    html.match(/"salePrice"\s*:\s*"?([\d.]+)"?/i);
 
   if (itempropPriceMatch?.[1]) {
     const parsed = parsePriceNumber(itempropPriceMatch[1]);
@@ -653,13 +784,260 @@ function extractMetaPriceAndCurrency(
 }
 
 /**
- * Layer 5: Smart Recovery for Cloudflare-Blocked Stores (alta.ge, veli.store, vendoo.ge, etc.)
- * Uses DuckDuckGo Search + Bing Image Search + Extra.ge SSR Catalog Cross-Lookup
- * to retrieve the exact product title, official image, and Georgian market price (₾).
+ * Runs all structured HTML extractors (JSON-LD, NextData, Amazon, Meta/OG) on a given HTML document.
+ */
+function parseAllLayersFromHtml(
+  html: string,
+  fullUrl: string,
+  hostname: string,
+  isAmazon: boolean
+) {
+  let title = "";
+  let description = "";
+  let image = "";
+  let price: number | null = null;
+  let currency = detectDefaultCurrencyByDomain(hostname);
+
+  // A. JSON-LD Product Schema (Extra.ge, Shopify, WooCommerce, eBay, ASOS, etc.)
+  const ld = extractFromJsonLd(html, fullUrl);
+  if (ld.title) title = ld.title;
+  if (ld.description) description = ld.description;
+  if (ld.image) image = ld.image;
+  if (ld.price) {
+    price = ld.price;
+    if (ld.currency) currency = ld.currency;
+  }
+
+  // B. Next.js __NEXT_DATA__ (Zoommer.ge, etc.)
+  const nextData = extractFromNextData(html, fullUrl);
+  if (!title && nextData.title) title = nextData.title;
+  if (!description && nextData.description) description = nextData.description;
+  if (!image && nextData.image) image = nextData.image;
+  if (!price && nextData.price) {
+    price = nextData.price;
+    if (nextData.currency) currency = nextData.currency;
+  }
+
+  // C. Amazon Specialized Extractor
+  if (isAmazon) {
+    const amz = extractAmazonDetails(html, hostname);
+    if (!title && amz.title) title = amz.title;
+    if (!description && amz.description) description = amz.description;
+    if (amz.image) image = amz.image;
+    if (amz.price) {
+      price = amz.price;
+      currency = amz.currency;
+    }
+  }
+
+  // D. OpenGraph & Meta Tags
+  const pageTitleTag = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
+  if (!title) {
+    const ogTitle =
+      extractMeta(html, "og:title") ||
+      extractMeta(html, "twitter:title") ||
+      pageTitleTag;
+    if (ogTitle && !isBotOrErrorString(ogTitle)) {
+      title = decodeHtmlEntities(ogTitle.trim());
+    }
+  }
+
+  if (!description) {
+    const ogDesc =
+      extractMeta(html, "og:description") ||
+      extractMeta(html, "twitter:description") ||
+      extractMeta(html, "description");
+    if (ogDesc && !isBotOrErrorString(ogDesc)) {
+      description = ogDesc;
+    }
+  }
+
+  if (!image) {
+    const rawOgImg =
+      extractMeta(html, "og:image:secure_url") ||
+      extractMeta(html, "og:image") ||
+      extractMeta(html, "twitter:image");
+    const resolvedOgImg = resolveAbsoluteUrl(rawOgImg, fullUrl);
+    if (resolvedOgImg && !isLikelyLogoOrPlaceholder(resolvedOgImg)) {
+      image = isAmazon
+        ? upgradeAmazonImageToHiRes(resolvedOgImg)
+        : resolvedOgImg;
+    }
+  }
+
+  if (!price) {
+    const metaP = extractMetaPriceAndCurrency(html, hostname);
+    if (metaP.price) {
+      price = metaP.price;
+      currency = metaP.currency;
+    }
+  }
+
+  return { title, description, image, price, currency };
+}
+
+/**
+ * Layer 5: Universal Headless Reader Fallback (`https://r.jina.ai/`)
+ * Bypasses Amazon, eBay, Etsy, Nike, Sephora, Zara, and international bot-blocks
+ * by rendering the live product DOM and returning either raw HTML or structured Markdown/JSON.
+ */
+async function scrapeViaJinaReader(
+  cleanUrl: string,
+  hostname: string,
+  isAmazon: boolean
+): Promise<{
+  title?: string;
+  description?: string;
+  image?: string;
+  price?: number;
+  currency?: string;
+}> {
+  const result: {
+    title?: string;
+    description?: string;
+    image?: string;
+    price?: number;
+    currency?: string;
+  } = {};
+
+  // 1. Try Jina Reader HTML mode first so all our JSON-LD, Amazon & Meta extractors run on the full rendered DOM
+  try {
+    const htmlRes = await fetch(`https://r.jina.ai/${cleanUrl}`, {
+      headers: {
+        "X-Return-Format": "html",
+        "X-No-Cache": "true",
+      },
+      signal: AbortSignal.timeout(9500),
+    });
+
+    if (htmlRes.ok) {
+      const renderedHtml = await htmlRes.text();
+      if (renderedHtml && renderedHtml.length > 500) {
+        const parsed = parseAllLayersFromHtml(
+          renderedHtml,
+          cleanUrl,
+          hostname,
+          isAmazon
+        );
+        if (parsed.title && !isBotOrErrorString(parsed.title)) {
+          result.title = parsed.title;
+        }
+        if (parsed.description && !isBotOrErrorString(parsed.description)) {
+          result.description = parsed.description;
+        }
+        if (parsed.image && !isLikelyLogoOrPlaceholder(parsed.image)) {
+          result.image = parsed.image;
+        }
+        if (parsed.price) {
+          result.price = parsed.price;
+          result.currency = parsed.currency;
+        }
+      }
+    }
+  } catch {
+    // Proceed to JSON/Markdown mode if HTML mode times out
+  }
+
+  // 2. If price, image, or title is still missing, query Jina JSON mode
+  if (!result.title || !result.image || !result.price) {
+    try {
+      const jsonRes = await fetch(`https://r.jina.ai/${cleanUrl}`, {
+        headers: {
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(8500),
+      });
+
+      if (jsonRes.ok) {
+        const payload = await jsonRes.json();
+        const data = payload?.data;
+        if (data && typeof data === "object") {
+          if (
+            !result.title &&
+            typeof data.title === "string" &&
+            !isBotOrErrorString(data.title)
+          ) {
+            result.title = data.title.trim();
+          }
+          if (
+            !result.description &&
+            typeof data.description === "string" &&
+            !isBotOrErrorString(data.description)
+          ) {
+            result.description = data.description.trim();
+          }
+
+          const md: string =
+            typeof data.content === "string" ? data.content : "";
+
+          if (!result.image && md) {
+            if (isAmazon) {
+              const amzImgs = [
+                ...md.matchAll(
+                  /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9._+-]+\.jpg/gi
+                ),
+              ].map((m) => m[0]);
+              const mainImg =
+                amzImgs.find(
+                  (u) =>
+                    !u.includes("._AC_US40_") &&
+                    !u.includes("._SS64_") &&
+                    !u.includes("._SX38_") &&
+                    !u.includes("._SY50_")
+                ) || amzImgs[0];
+              if (mainImg) {
+                result.image = upgradeAmazonImageToHiRes(mainImg);
+              }
+            } else {
+              const mdImgs = [
+                ...md.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/gi),
+              ]
+                .map((m) => m[1])
+                .filter((u) => !isLikelyLogoOrPlaceholder(u));
+              if (mdImgs[0]) {
+                result.image = mdImgs[0];
+              }
+            }
+          }
+
+          if (!result.price && md) {
+            // Match currency + price in rendered markdown (e.g., $13.80, €49.95, £25.00, 129.00 ₾)
+            const priceMatch =
+              md.match(/\$\s*(\d{1,5}(?:,\d{3})*(?:\.\d{2}))/) ||
+              md.match(/€\s*(\d{1,5}(?:[.,]\d{2}))/) ||
+              md.match(/£\s*(\d{1,5}(?:\.\d{2}))/) ||
+              md.match(/(\d{1,5}(?:\.\d{2})?)\s*₾/);
+
+            if (priceMatch?.[1]) {
+              const p = parsePriceNumber(priceMatch[1]);
+              if (p) {
+                result.price = p;
+                const fullToken = priceMatch[0];
+                if (fullToken.includes("$")) result.currency = "USD";
+                else if (fullToken.includes("€")) result.currency = "EUR";
+                else if (fullToken.includes("£")) result.currency = "GBP";
+                else if (fullToken.includes("₾")) result.currency = "GEL";
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore error
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Layer 6: Smart Recovery for Cloudflare-Blocked Stores (alta.ge, veli.store, vendoo.ge, etc.)
+ * Uses DuckDuckGo Search + Bing Image Search + Extra.ge SSR Catalog Cross-Lookup (for Georgian stores).
  */
 async function resolveCloudflareBlockedProduct(
   parsedUrl: URL,
-  hostname: string
+  hostname: string,
+  isGeorgianStore: boolean
 ): Promise<{
   title?: string;
   description?: string;
@@ -687,7 +1065,6 @@ async function resolveCloudflareBlockedProduct(
     "Accept-Language": "ka,en-US;q=0.9,en;q=0.8",
   };
 
-  // Run DuckDuckGo Search, Bing Image Search, and Extra.ge Catalog Search in parallel
   const [ddgTask, bingImgTask, extraTask] = await Promise.allSettled([
     // 1. DuckDuckGo HTML search for exact store title & snippet
     (async () => {
@@ -725,7 +1102,6 @@ async function resolveCloudflareBlockedProduct(
       ].map((m) => decodeHtmlEntities(m[1]));
 
       const validImages = matches.filter((u) => !isLikelyLogoOrPlaceholder(u));
-      // Prefer image hosted on the store's own CDN if available
       const storeBase = hostname.split(".")[0];
       const storeCdnImg = validImages.find((u) =>
         u.toLowerCase().includes(storeBase)
@@ -733,13 +1109,13 @@ async function resolveCloudflareBlockedProduct(
       return storeCdnImg || validImages[0] || null;
     })(),
 
-    // 3. Extra.ge SSR Product Catalog Lookup for exact GEL price & product metadata
+    // 3. Extra.ge SSR Product Catalog Lookup (ONLY for Georgian stores so international prices aren't mismatched)
     (async () => {
+      if (!isGeorgianStore) return null;
       const primaryBrandWord = keywords[0] || "";
       const secondModelWord = keywords[1] || "";
       if (!primaryBrandWord || primaryBrandWord.length < 2) return null;
 
-      // Try 3-word query first, then fallback to 2-word brand+model query (e.g., "stanley quencher")
       const candidateQueries = [
         keywords.slice(0, 3).join(" "),
         keywords.slice(0, 2).join(" "),
@@ -757,7 +1133,6 @@ async function resolveCloudflareBlockedProduct(
         ].map((m) => m[1]);
         const uniqueLinks = [...new Set(prodLinks)];
 
-        // Require the primary brand/model word (and second word if present) to match in the product slug
         const bestLink = uniqueLinks.find((link) => {
           const slugPart = link.toLowerCase();
           const hasFirst = slugPart.includes(primaryBrandWord);
@@ -829,10 +1204,22 @@ export async function POST(req: NextRequest) {
     }
 
     const parsedUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
-    const fullUrl = parsedUrl.toString();
     const hostname = parsedUrl.hostname.replace(/^www\./, "").toLowerCase();
     const isAmazon =
-      hostname.includes("amazon.") || hostname === "a.co" || hostname === "amzn.to";
+      hostname.includes("amazon.") ||
+      hostname === "a.co" ||
+      hostname === "amzn.to";
+    const isGeorgianStore =
+      hostname.endsWith(".ge") ||
+      hostname.includes("veli.store") ||
+      hostname.includes("zoommer") ||
+      hostname.includes("extra") ||
+      hostname.includes("alta") ||
+      hostname.includes("vendoo") ||
+      hostname.includes("lutecia") ||
+      hostname.includes("dressup");
+
+    const cleanUrl = normalizeTargetProductUrl(parsedUrl, isAmazon);
 
     const exchangeRates = await getTbcExchangeRates();
 
@@ -877,9 +1264,9 @@ export async function POST(req: NextRequest) {
     // Step 1: Direct HTML Fetch + Multi-Layer Structured Parsing
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6500);
+      const timeout = setTimeout(() => controller.abort(), 5500);
 
-      const res = await fetch(fullUrl, {
+      const res = await fetch(cleanUrl, {
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -895,81 +1282,24 @@ export async function POST(req: NextRequest) {
       if (res.ok) {
         const html = await res.text();
         const pageTitleTag = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
-        const isBotPage = isBotOrErrorString(pageTitleTag);
+        // Amazon bot-block pages are ~3.7KB with <title>Amazon.com</title>
+        const isBotPage =
+          isBotOrErrorString(pageTitleTag) ||
+          (isAmazon && html.length < 15000);
 
         if (!isBotPage) {
-          // A. JSON-LD Product Schema (Extra.ge, Shopify, WooCommerce, etc.)
-          const ld = extractFromJsonLd(html, fullUrl);
-          if (ld.title) finalTitle = ld.title;
-          if (ld.description) finalDescription = ld.description;
-          if (ld.image) finalImage = ld.image;
-          if (ld.price) {
-            finalPrice = ld.price;
-            if (ld.currency) finalCurrency = ld.currency;
-          }
-
-          // B. Next.js __NEXT_DATA__ (Zoommer.ge, etc.)
-          const nextData = extractFromNextData(html, fullUrl);
-          if (!finalTitle && nextData.title) finalTitle = nextData.title;
-          if (!finalDescription && nextData.description)
-            finalDescription = nextData.description;
-          if (!finalImage && nextData.image) finalImage = nextData.image;
-          if (!finalPrice && nextData.price) {
-            finalPrice = nextData.price;
-            if (nextData.currency) finalCurrency = nextData.currency;
-          }
-
-          // C. Amazon Specialized Extractor
-          if (isAmazon) {
-            const amz = extractAmazonDetails(html, hostname);
-            if (!finalTitle && amz.title) finalTitle = amz.title;
-            if (!finalDescription && amz.description)
-              finalDescription = amz.description;
-            if (amz.image) finalImage = amz.image;
-            if (amz.price) {
-              finalPrice = amz.price;
-              finalCurrency = amz.currency;
-            }
-          }
-
-          // D. OpenGraph & Meta Tags
-          if (!finalTitle) {
-            const ogTitle =
-              extractMeta(html, "og:title") ||
-              extractMeta(html, "twitter:title") ||
-              pageTitleTag;
-            if (ogTitle && !isBotOrErrorString(ogTitle)) {
-              finalTitle = decodeHtmlEntities(ogTitle.trim());
-            }
-          }
-
-          if (!finalDescription) {
-            const ogDesc =
-              extractMeta(html, "og:description") ||
-              extractMeta(html, "twitter:description") ||
-              extractMeta(html, "description");
-            if (ogDesc && !isBotOrErrorString(ogDesc)) {
-              finalDescription = ogDesc;
-            }
-          }
-
-          if (!finalImage) {
-            const rawOgImg =
-              extractMeta(html, "og:image:secure_url") ||
-              extractMeta(html, "og:image") ||
-              extractMeta(html, "twitter:image");
-            const resolvedOgImg = resolveAbsoluteUrl(rawOgImg, fullUrl);
-            if (resolvedOgImg && !isLikelyLogoOrPlaceholder(resolvedOgImg)) {
-              finalImage = resolvedOgImg;
-            }
-          }
-
-          if (!finalPrice) {
-            const metaP = extractMetaPriceAndCurrency(html, hostname);
-            if (metaP.price) {
-              finalPrice = metaP.price;
-              finalCurrency = metaP.currency;
-            }
+          const parsed = parseAllLayersFromHtml(
+            html,
+            cleanUrl,
+            hostname,
+            isAmazon
+          );
+          if (parsed.title) finalTitle = parsed.title;
+          if (parsed.description) finalDescription = parsed.description;
+          if (parsed.image) finalImage = parsed.image;
+          if (parsed.price) {
+            finalPrice = parsed.price;
+            finalCurrency = parsed.currency;
           }
         }
       }
@@ -977,11 +1307,26 @@ export async function POST(req: NextRequest) {
       // Direct fetch timed out or blocked; proceed to Step 2
     }
 
-    // Step 2: If Cloudflare blocked the store (e.g., alta.ge, veli.store) or price/image is missing
+    // Step 2: Universal Headless Reader Fallback (Jina Reader) for Amazon & International Websites
+    // Runs whenever direct fetch was blocked by anti-bot protection or missed product details (skipped for Georgian stores which use Step 3)
+    if (!isGeorgianStore && (!finalTitle || !finalImage || !finalPrice)) {
+      const jinaData = await scrapeViaJinaReader(cleanUrl, hostname, isAmazon);
+      if (!finalTitle && jinaData.title) finalTitle = jinaData.title;
+      if (!finalDescription && jinaData.description)
+        finalDescription = jinaData.description;
+      if (!finalImage && jinaData.image) finalImage = jinaData.image;
+      if (!finalPrice && jinaData.price) {
+        finalPrice = jinaData.price;
+        if (jinaData.currency) finalCurrency = jinaData.currency;
+      }
+    }
+
+    // Step 3: Cloudflare-Blocked Store Recovery (DuckDuckGo + Bing Image + Extra.ge Catalog for Georgian stores)
     if (!finalTitle || !finalImage || !finalPrice) {
       const recovered = await resolveCloudflareBlockedProduct(
         parsedUrl,
-        hostname
+        hostname,
+        isGeorgianStore
       );
       if (!finalTitle && recovered.title) finalTitle = recovered.title;
       if (!finalDescription && recovered.description)
@@ -993,12 +1338,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Clean up store suffixes in title
+    // Clean up store suffixes & prefixes in title
     finalTitle = finalTitle
       .replace(/^Amazon\.[a-z.]+\s*:\s*/i, "")
       .replace(/^საუკეთესო ფასი\s*[│|-]\s*/i, "")
       .replace(
-        /\s*[│|-]\s*(?:Zoommer|Veli\.store|Extra\.ge|Alta\.ge|alta\.ge|Amazon).*$/i,
+        /\s*[│|-]\s*(?:Zoommer|Veli\.store|Extra\.ge|Alta\.ge|alta\.ge|Amazon|eBay|Etsy|Zara).*$/i,
         ""
       )
       .trim();

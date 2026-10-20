@@ -33,6 +33,7 @@ import {
   ShoppingBag,
   Heart,
   Search,
+  Loader2,
 } from "lucide-react";
 import { TRANSLATIONS, Language } from "@/lib/meminda-data";
 import type { PublicUser } from "@/lib/auth";
@@ -2819,18 +2820,52 @@ export default function MemindaApp() {
                     type="text"
                     value={urlInput}
                     onChange={(e) => setUrlInput(e.target.value)}
+                    disabled={isScraping}
                     placeholder="https://www.amazon.com/... ან https://veli.store/..."
-                    className="flex-1 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5A5F]"
+                    className="flex-1 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5A5F] disabled:opacity-60"
                   />
                   <button
                     type="button"
                     onClick={() => handleAutoScrape()}
-                    disabled={isScraping}
-                    className="rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] text-white px-4 py-2 text-xs font-extrabold shrink-0 shadow-xs transition cursor-pointer"
+                    disabled={isScraping || !urlInput.trim()}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] hover:from-[#FF4248] hover:to-[#FF662A] disabled:opacity-70 text-white px-4 py-2 text-xs font-extrabold shrink-0 shadow-xs transition cursor-pointer"
                   >
-                    {isScraping ? "..." : t.fetchBtn}
+                    {isScraping ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>
+                          {lang === "ka" ? "იძებნება..." : "Fetching..."}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>{t.fetchBtn}</span>
+                      </>
+                    )}
                   </button>
                 </div>
+
+                {isScraping && (
+                  <div className="mt-3 rounded-xl bg-white/95 border border-orange-200/90 p-3 shadow-2xs animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-orange-100 to-rose-100 flex items-center justify-center shrink-0">
+                        <Loader2 className="h-5 w-5 text-[#FF5A5F] animate-spin" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-extrabold text-slate-800">
+                          {lang === "ka"
+                            ? "მიმდინარეობს პროდუქტის ფოტოსა და ფასის წამოღება..."
+                            : "Fetching product photo, title & live price..."}
+                        </p>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <div className="h-2 w-28 rounded-full bg-orange-200/80" />
+                          <div className="h-2 w-14 rounded-full bg-rose-200/80" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
