@@ -309,6 +309,8 @@ export default function MemindaApp() {
             setCurrentUser((prev) =>
               prev?.id === data.user.id ? prev : data.user
             );
+            setAuthModalMode(null);
+            setPendingVerification(null);
           }
         }
       } catch {
@@ -547,6 +549,22 @@ export default function MemindaApp() {
       );
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code || "";
+      // If mobile browser closed/partitioned popup after authenticating, auth.currentUser may already be populated
+      if (auth.currentUser) {
+        try {
+          const idToken = await auth.currentUser.getIdToken();
+          const data = await syncFirebaseUserWithBackend(idToken, {
+            name: auth.currentUser.displayName || undefined,
+            email: auth.currentUser.email || undefined,
+          });
+          setAuthModalMode(null);
+          await fetchAllData(data.user.id, data.defaultWishlistId, true);
+          return;
+        } catch {
+          // Fall through to error message
+        }
+      }
+
       if (code === "auth/unauthorized-domain") {
         const host =
           typeof window !== "undefined" ? window.location.hostname : "meminda.ge";
