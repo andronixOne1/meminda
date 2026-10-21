@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDb, writeDb, hashPassword } from "@/lib/db";
+import { readDb, updateUserInDb, updateItemInDb, hashPassword } from "@/lib/db";
 import { getCurrentUser, toPublicUser } from "@/lib/auth";
 
 export async function PUT(req: NextRequest) {
@@ -91,6 +91,8 @@ export async function PUT(req: NextRequest) {
       user.passwordHash = hashPassword(newPassword);
     }
 
+    await updateUserInDb(user);
+
     // Also update reservedByName on items this user reserved if they didn't reserve anonymously
     for (const item of db.items) {
       if (
@@ -100,10 +102,9 @@ export async function PUT(req: NextRequest) {
       ) {
         item.reservation.reservedByName = newName;
         item.reservation.reservedByUsername = newUsername;
+        await updateItemInDb(item);
       }
     }
-
-    await writeDb(db);
 
     return NextResponse.json({
       ok: true,

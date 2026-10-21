@@ -55,6 +55,7 @@ import {
 } from "firebase/auth";
 
 const GUEST_TOKENS_STORAGE_KEY = "meminda_guest_cancel_tokens_v1";
+const USER_SESSION_CACHE_KEY = "meminda_cached_user_v1";
 
 const PRESET_AVATARS = [
   "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
@@ -187,10 +188,30 @@ export default function MemindaApp() {
       if (saved) {
         setGuestCancelTokens(JSON.parse(saved));
       }
+      const cachedUser = localStorage.getItem(USER_SESSION_CACHE_KEY);
+      if (cachedUser) {
+        const parsedUser = JSON.parse(cachedUser) as PublicUser;
+        if (parsedUser && parsedUser.id) {
+          setCurrentUser((prev) => prev || parsedUser);
+        }
+      }
     } catch {
       // Ignore
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      if (currentUser && currentUser.id) {
+        localStorage.setItem(
+          USER_SESSION_CACHE_KEY,
+          JSON.stringify(currentUser)
+        );
+      }
+    } catch {
+      // Ignore
+    }
+  }, [currentUser]);
 
   const saveGuestCancelToken = (itemId: string, token: string) => {
     const updated = { ...guestCancelTokens, [itemId]: token };
@@ -219,7 +240,11 @@ export default function MemindaApp() {
         setUsers(loadedUsers);
         setWishlists(loadedWishlists);
         setItems(loadedItems);
-        setCurrentUser(loggedUser);
+        if (loggedUser) {
+          setCurrentUser(loggedUser);
+        } else if (!auth.currentUser) {
+          setCurrentUser(null);
+        }
 
         const params = new URLSearchParams(window.location.search);
         const urlUsername = params.get("u")?.toLowerCase();
@@ -816,6 +841,11 @@ export default function MemindaApp() {
   };
 
   const handleLogout = async () => {
+    try {
+      localStorage.removeItem(USER_SESSION_CACHE_KEY);
+    } catch {
+      // Ignore
+    }
     try {
       await signOut(auth);
     } catch {

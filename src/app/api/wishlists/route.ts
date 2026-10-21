@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDb, writeDb, WishlistRecord } from "@/lib/db";
+import { readDb, updateWishlistInDb, WishlistRecord } from "@/lib/db";
 import { getCurrentUser, toPublicUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
@@ -79,8 +79,7 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    db.wishlists.unshift(newWishlist);
-    await writeDb(db);
+    await updateWishlistInDb(newWishlist);
 
     return NextResponse.json({ wishlist: newWishlist });
   } catch {

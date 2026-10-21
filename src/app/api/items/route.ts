@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDb, writeDb, WishItemRecord } from "@/lib/db";
+import { readDb, updateItemInDb, deleteItemFromDb, WishItemRecord } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -54,8 +54,7 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    db.items.unshift(newItem);
-    await writeDb(db);
+    await updateItemInDb(newItem);
 
     return NextResponse.json({ item: newItem });
   } catch {
@@ -81,8 +80,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  db.items = db.items.filter((i) => i.id !== itemId);
-  await writeDb(db);
+  await deleteItemFromDb(itemId);
 
   return NextResponse.json({ ok: true });
 }

@@ -5,6 +5,8 @@ import {
   collection,
   getDocs,
   doc,
+  setDoc,
+  deleteDoc,
   writeBatch,
 } from "firebase/firestore";
 import { firestoreDb } from "./firebase";
@@ -416,5 +418,104 @@ export async function writeDb(data: DatabaseSchema): Promise<void> {
     lastKnownItemIds = currentItemIds;
   } catch (err) {
     console.error("Failed to write to Firestore:", err);
+  }
+}
+
+/**
+ * Atomically upserts a single WishItemRecord in Cloud Firestore (and local fallback)
+ * without overwriting other documents that might have changed concurrently.
+ */
+export async function updateItemInDb(item: WishItemRecord): Promise<void> {
+  try {
+    const ref = doc(firestoreDb, "items", item.id);
+    await setDoc(ref, cleanForFirestore(item));
+    lastKnownItemIds.add(item.id);
+  } catch (err) {
+    console.error("Failed to update item in Firestore:", err);
+  }
+
+  try {
+    const localData = readLocalFallbackDb();
+    const idx = localData.items.findIndex((i) => i.id === item.id);
+    if (idx !== -1) {
+      localData.items[idx] = item;
+    } else {
+      localData.items.unshift(item);
+    }
+    writeLocalFallbackDb(localData);
+  } catch {
+    // Ignore local fallback error
+  }
+}
+
+/**
+ * Atomically deletes a single WishItemRecord from Cloud Firestore (and local fallback).
+ */
+export async function deleteItemFromDb(itemId: string): Promise<void> {
+  try {
+    const ref = doc(firestoreDb, "items", itemId);
+    await deleteDoc(ref);
+    lastKnownItemIds.delete(itemId);
+  } catch (err) {
+    console.error("Failed to delete item from Firestore:", err);
+  }
+
+  try {
+    const localData = readLocalFallbackDb();
+    localData.items = localData.items.filter((i) => i.id !== itemId);
+    writeLocalFallbackDb(localData);
+  } catch {
+    // Ignore local fallback error
+  }
+}
+
+/**
+ * Atomically upserts a single WishlistRecord in Cloud Firestore (and local fallback).
+ */
+export async function updateWishlistInDb(wl: WishlistRecord): Promise<void> {
+  try {
+    const ref = doc(firestoreDb, "wishlists", wl.id);
+    await setDoc(ref, cleanForFirestore(wl));
+    lastKnownWishlistIds.add(wl.id);
+  } catch (err) {
+    console.error("Failed to update wishlist in Firestore:", err);
+  }
+
+  try {
+    const localData = readLocalFallbackDb();
+    const idx = localData.wishlists.findIndex((w) => w.id === wl.id);
+    if (idx !== -1) {
+      localData.wishlists[idx] = wl;
+    } else {
+      localData.wishlists.unshift(wl);
+    }
+    writeLocalFallbackDb(localData);
+  } catch {
+    // Ignore local fallback error
+  }
+}
+
+/**
+ * Atomically upserts a single UserRecord in Cloud Firestore (and local fallback).
+ */
+export async function updateUserInDb(user: UserRecord): Promise<void> {
+  try {
+    const ref = doc(firestoreDb, "users", user.id);
+    await setDoc(ref, cleanForFirestore(user));
+  } catch (err) {
+    console.error("Failed to update user in Firestore:", err);
+  }
+
+  try {
+    const localData = readLocalFallbackDb();
+    const idx = localData.users.findIndex((u) => u.id === user.id);
+    if (idx !== -1) {
+      localData.users[idx] = user;
+    } else {
+      localData.users.push(user);
+    }
+    writeLocalFallbackDb(localData);
+  } catch {
+    // Ignore local fallback error
   }
 }

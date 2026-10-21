@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDb, writeDb, hashPassword, UserRecord } from "@/lib/db";
+import { readDb, updateUserInDb, updateWishlistInDb, hashPassword, UserRecord } from "@/lib/db";
 import { createSessionForUser, SESSION_COOKIE_NAME, toPublicUser } from "@/lib/auth";
 import { firebaseConfig } from "@/lib/firebase";
 
@@ -78,14 +78,19 @@ export async function POST(req: NextRequest) {
     let defaultWishlistId: string | undefined;
 
     if (existingUser) {
+      let changed = false;
       // Link firebaseUid if not linked yet
       if (!existingUser.firebaseUid) {
         existingUser.firebaseUid = fbUser.localId;
+        changed = true;
       }
       if (fbUser.photoUrl && existingUser.avatarUrl.includes("unsplash.com")) {
         existingUser.avatarUrl = fbUser.photoUrl;
+        changed = true;
       }
-      await writeDb(db);
+      if (changed) {
+        await updateUserInDb(existingUser);
+      }
     } else {
       // 2. First-time user (via Firebase Register or Google Sign-In) -> Create Profile & Starter Wishlist
       const name =
@@ -118,11 +123,11 @@ export async function POST(req: NextRequest) {
         createdAt: new Date().toISOString(),
       };
 
-      db.users.push(newUser);
       existingUser = newUser;
+      await updateUserInDb(newUser);
 
       defaultWishlistId = `wl-${Date.now()}`;
-      db.wishlists.unshift({
+      await updateWishlistInDb({
         id: defaultWishlistId,
         slug: `${finalUsername}-wishes`,
         ownerId: userId,
@@ -133,8 +138,6 @@ export async function POST(req: NextRequest) {
         isPublic: true,
         createdAt: new Date().toISOString(),
       });
-
-      await writeDb(db);
     }
 
     const sessionToken = createSessionForUser(existingUser.id);

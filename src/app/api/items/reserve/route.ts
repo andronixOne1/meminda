@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { readDb, writeDb, hashToken } from "@/lib/db";
+import { readDb, updateItemInDb, hashToken } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -58,10 +58,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      db.items[itemIndex].reservation = null;
-      await writeDb(db);
+      item.reservation = null;
+      await updateItemInDb(item);
 
-      return NextResponse.json({ ok: true, item: db.items[itemIndex] });
+      return NextResponse.json({ ok: true, item });
     }
 
     // Reserve action: Users cannot reserve their own wishes
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
 
     const guestCancelToken = crypto.randomBytes(16).toString("hex");
 
-    db.items[itemIndex].reservation = {
+    item.reservation = {
       id: `res-${Date.now()}`,
       reservedByUserId: currentUser?.id,
       reservedByUsername: currentUser?.username,
@@ -108,16 +108,15 @@ export async function POST(req: NextRequest) {
       reservedAt: new Date().toISOString(),
     };
 
-    await writeDb(db);
+    await updateItemInDb(item);
 
-    const { guestCancelTokenHash, ...safeReservation } =
-      db.items[itemIndex].reservation!;
+    const { guestCancelTokenHash, ...safeReservation } = item.reservation;
     void guestCancelTokenHash;
 
     return NextResponse.json({
       ok: true,
       item: {
-        ...db.items[itemIndex],
+        ...item,
         reservation: safeReservation,
       },
       guestCancelToken,
