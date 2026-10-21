@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDb, updateUserInDb, updateItemInDb, hashPassword } from "@/lib/db";
+import {
+  readDb,
+  updateUserInDb,
+  updateItemInDb,
+  hashPassword,
+  UserGender,
+  logAnalyticsEvent,
+} from "@/lib/db";
 import { getCurrentUser, toPublicUser } from "@/lib/auth";
 
 export async function PUT(req: NextRequest) {
@@ -86,12 +93,41 @@ export async function PUT(req: NextRequest) {
     user.avatarUrl = newAvatarUrl;
     user.bioKa = newBio || `${newName}-ს სურვილების სია ✨`;
     user.bioEn = newBio || `${newName}'s Wishlist Profile ✨`;
+    user.updatedAt = new Date().toISOString();
+
+    const validGenders: UserGender[] = ["female", "male", "other", "prefer_not_to_say"];
+    if (body.gender !== undefined) {
+      if (validGenders.includes(body.gender)) {
+        user.gender = body.gender;
+      } else if (body.gender === "") {
+        user.gender = undefined;
+      }
+    }
+
+    if (body.age !== undefined) {
+      const rawAge = Number(body.age);
+      if (Number.isFinite(rawAge) && rawAge >= 5 && rawAge <= 120) {
+        user.age = Math.round(rawAge);
+        user.birthYear = new Date().getFullYear() - Math.round(rawAge);
+      } else if (body.age === "" || body.age === null) {
+        user.age = undefined;
+        user.birthYear = undefined;
+      }
+    }
 
     if (newPassword) {
       user.passwordHash = hashPassword(newPassword);
     }
 
     await updateUserInDb(user);
+
+    await logAnalyticsEvent({
+      eventType: "user_profile_updated",
+      userId: user.id,
+      username: user.username,
+      userGender: user.gender,
+      userAge: user.age,
+    });
 
     // Also update reservedByName on items this user reserved if they didn't reserve anonymously
     for (const item of db.items) {

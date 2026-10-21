@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { inferProductCategory, logAnalyticsEvent } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
 
 interface ExchangeRateMap {
   [currencyCode: string]: {
@@ -1358,6 +1360,30 @@ export async function POST(req: NextRequest) {
     }
 
     const conv = convertPriceToGel(finalPrice, finalCurrency);
+    const storeDisplay = isAmazon ? "Amazon" : hostname;
+    const inferredCategory = inferProductCategory(
+      finalTitle,
+      finalDescription,
+      storeDisplay,
+      cleanUrl
+    );
+    const currentUser = await getCurrentUser().catch(() => null);
+
+    await logAnalyticsEvent({
+      eventType: "product_scraped",
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      userGender: currentUser?.gender,
+      userAge: currentUser?.age,
+      itemTitle: finalTitle.slice(0, 120),
+      priceGel: conv.priceGel || undefined,
+      originalPrice: conv.originalPrice,
+      originalCurrency: conv.originalCurrency,
+      storeName: storeDisplay,
+      storeDomain: hostname,
+      productUrl: cleanUrl,
+      category: inferredCategory,
+    });
 
     return NextResponse.json({
       title: finalTitle.slice(0, 120),
@@ -1368,7 +1394,9 @@ export async function POST(req: NextRequest) {
       originalCurrency: conv.originalCurrency,
       exchangeRateUsed: conv.exchangeRateUsed,
       rateSource: conv.rateSource,
-      store: isAmazon ? "Amazon" : hostname,
+      store: storeDisplay,
+      storeDomain: hostname,
+      category: inferredCategory,
     });
   } catch {
     return NextResponse.json({ error: "Could not parse URL" }, { status: 400 });

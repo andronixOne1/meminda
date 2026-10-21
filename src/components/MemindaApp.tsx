@@ -40,7 +40,12 @@ import {
 } from "lucide-react";
 import { TRANSLATIONS, Language } from "@/lib/meminda-data";
 import type { PublicUser } from "@/lib/auth";
-import type { WishlistRecord, WishItemRecord } from "@/lib/db";
+import type {
+  WishlistRecord,
+  WishItemRecord,
+  UserGender,
+  ProductCategory,
+} from "@/lib/db";
 import { auth, googleProvider } from "@/lib/firebase";
 import {
   signInWithEmailAndPassword,
@@ -114,6 +119,8 @@ export default function MemindaApp() {
   const [regName, setRegName] = useState("");
   const [regUsername, setRegUsername] = useState("");
   const [regEmail, setRegEmail] = useState("");
+  const [regGender, setRegGender] = useState<UserGender | "">("");
+  const [regAge, setRegAge] = useState("");
   const [regBio, setRegBio] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
@@ -121,6 +128,8 @@ export default function MemindaApp() {
     email: string;
     name: string;
     username: string;
+    gender?: UserGender | "";
+    age?: string;
     bio: string;
   } | null>(null);
   const [isResendingVerification, setIsResendingVerification] = useState(false);
@@ -129,6 +138,8 @@ export default function MemindaApp() {
   const [settingsName, setSettingsName] = useState("");
   const [settingsUsername, setSettingsUsername] = useState("");
   const [settingsEmail, setSettingsEmail] = useState("");
+  const [settingsGender, setSettingsGender] = useState<UserGender | "">("");
+  const [settingsAge, setSettingsAge] = useState("");
   const [settingsBio, setSettingsBio] = useState("");
   const [settingsAvatar, setSettingsAvatar] = useState("");
   const [settingsNewPassword, setSettingsNewPassword] = useState("");
@@ -148,6 +159,7 @@ export default function MemindaApp() {
   const [newTitle, setNewTitle] = useState("");
   const [newPrice, setNewPrice] = useState("");
   const [newStore, setNewStore] = useState("");
+  const [newCategory, setNewCategory] = useState<ProductCategory>("other");
   const [newImage, setNewImage] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newPriority, setNewPriority] = useState<"high" | "medium" | "low">("high");
@@ -337,6 +349,8 @@ export default function MemindaApp() {
     setSettingsName(currentUser.name || "");
     setSettingsUsername(currentUser.username || "");
     setSettingsEmail(currentUser.email || "");
+    setSettingsGender(currentUser.gender || "");
+    setSettingsAge(currentUser.age ? String(currentUser.age) : "");
     setSettingsBio(lang === "ka" ? currentUser.bioKa : currentUser.bioEn);
     setSettingsAvatar(currentUser.avatarUrl || "");
     setSettingsNewPassword("");
@@ -401,6 +415,8 @@ export default function MemindaApp() {
           name: settingsName,
           username: settingsUsername,
           email: settingsEmail,
+          gender: settingsGender,
+          age: settingsAge ? Number(settingsAge) : null,
           bio: settingsBio,
           avatarUrl: settingsAvatar,
           newPassword: settingsNewPassword || undefined,
@@ -511,7 +527,14 @@ export default function MemindaApp() {
   // Firebase & Server Auth Sync Helper
   const syncFirebaseUserWithBackend = async (
     idToken: string,
-    extra?: { name?: string; username?: string; email?: string; bio?: string }
+    extra?: {
+      name?: string;
+      username?: string;
+      email?: string;
+      gender?: UserGender | "";
+      age?: number;
+      bio?: string;
+    }
   ) => {
     const res = await fetch("/api/auth/firebase", {
       method: "POST",
@@ -712,6 +735,8 @@ export default function MemindaApp() {
         email: regEmail.trim(),
         name: regName.trim(),
         username: regUsername.trim(),
+        gender: regGender,
+        age: regAge,
         bio: regBio.trim(),
       });
 
@@ -777,6 +802,8 @@ export default function MemindaApp() {
         name: pendingVerification?.name || fbUser.displayName || "",
         username: pendingVerification?.username || "",
         email: pendingVerification?.email || fbUser.email || "",
+        gender: pendingVerification?.gender || regGender || undefined,
+        age: Number(pendingVerification?.age || regAge) || undefined,
         bio: pendingVerification?.bio || "",
       });
 
@@ -785,6 +812,8 @@ export default function MemindaApp() {
       setRegName("");
       setRegUsername("");
       setRegEmail("");
+      setRegGender("");
+      setRegAge("");
       setRegBio("");
       setAuthIdentifier("");
       setAuthPassword("");
@@ -920,6 +949,7 @@ export default function MemindaApp() {
       if (data.title) setNewTitle(data.title);
       setNewPrice(data.price ? String(data.price) : "");
       if (data.store) setNewStore(data.store);
+      if (data.category) setNewCategory(data.category as ProductCategory);
       setNewImage(data.image || "");
       if (data.description) setNewDesc(data.description);
       if (
@@ -966,6 +996,7 @@ export default function MemindaApp() {
         imageUrl: newImage,
         productUrl: urlInput || undefined,
         storeName: newStore || undefined,
+        category: newCategory,
         priority: newPriority,
       }),
     });
@@ -976,6 +1007,7 @@ export default function MemindaApp() {
       setNewTitle("");
       setNewPrice("");
       setNewStore("");
+      setNewCategory("other");
       setNewImage("");
       setNewDesc("");
       setConversionInfo(null);
@@ -2759,6 +2791,46 @@ export default function MemindaApp() {
                         className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                       />
                     </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          {t.authGenderLabel}
+                        </label>
+                        <select
+                          required
+                          value={regGender}
+                          onChange={(e) =>
+                            setRegGender(e.target.value as UserGender | "")
+                          }
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                        >
+                          <option value="" disabled>
+                            {t.authGenderSelectPlaceholder}
+                          </option>
+                          <option value="female">{t.authGenderFemale}</option>
+                          <option value="male">{t.authGenderMale}</option>
+                          <option value="other">{t.authGenderOther}</option>
+                          <option value="prefer_not_to_say">
+                            {t.authGenderPreferNot}
+                          </option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          {t.authAgeLabel}
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min={5}
+                          max={120}
+                          value={regAge}
+                          onChange={(e) => setRegAge(e.target.value)}
+                          placeholder={t.authAgePlaceholder}
+                          className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                        />
+                      </div>
+                    </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">
                         {t.authBioLabel}
@@ -2949,6 +3021,44 @@ export default function MemindaApp() {
                   onChange={(e) => setSettingsEmail(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
+              </div>
+
+              {/* Gender & Age */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {t.authGenderLabel.replace(" *", "")}
+                  </label>
+                  <select
+                    value={settingsGender}
+                    onChange={(e) =>
+                      setSettingsGender(e.target.value as UserGender | "")
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  >
+                    <option value="">{t.authGenderSelectPlaceholder}</option>
+                    <option value="female">{t.authGenderFemale}</option>
+                    <option value="male">{t.authGenderMale}</option>
+                    <option value="other">{t.authGenderOther}</option>
+                    <option value="prefer_not_to_say">
+                      {t.authGenderPreferNot}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {t.authAgeLabel.replace(" *", "")}
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={120}
+                    value={settingsAge}
+                    onChange={(e) => setSettingsAge(e.target.value)}
+                    placeholder={t.authAgePlaceholder}
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
               </div>
 
               {/* Bio */}
@@ -3261,7 +3371,7 @@ export default function MemindaApp() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     {t.itemStoreLabel}
@@ -3273,6 +3383,30 @@ export default function MemindaApp() {
                     placeholder={t.itemStorePlaceholder}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {t.itemCategoryLabel}
+                  </label>
+                  <select
+                    value={newCategory}
+                    onChange={(e) =>
+                      setNewCategory(e.target.value as ProductCategory)
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  >
+                    <option value="tech">{t.catTech}</option>
+                    <option value="beauty">{t.catBeauty}</option>
+                    <option value="fashion">{t.catFashion}</option>
+                    <option value="jewelry_accessories">{t.catJewelry}</option>
+                    <option value="home">{t.catHome}</option>
+                    <option value="books_hobbies">{t.catBooks}</option>
+                    <option value="sports_outdoors">{t.catSports}</option>
+                    <option value="kids_toys">{t.catKids}</option>
+                    <option value="experiences">{t.catExperiences}</option>
+                    <option value="other">{t.catOther}</option>
+                  </select>
                 </div>
 
                 <div>

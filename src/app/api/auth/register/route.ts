@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDb, writeDb, hashPassword, UserRecord } from "@/lib/db";
+import {
+  readDb,
+  updateUserInDb,
+  updateWishlistInDb,
+  hashPassword,
+  UserRecord,
+  UserGender,
+  logAnalyticsEvent,
+} from "@/lib/db";
 import { createSessionForUser, SESSION_COOKIE_NAME, toPublicUser } from "@/lib/auth";
 
 const DEFAULT_AVATARS = [
@@ -44,6 +52,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const validGenders: UserGender[] = ["female", "male", "other", "prefer_not_to_say"];
+    const parsedGender: UserGender | undefined = validGenders.includes(body.gender)
+      ? body.gender
+      : undefined;
+    const rawAge = Number(body.age);
+    const parsedAge =
+      Number.isFinite(rawAge) && rawAge >= 5 && rawAge <= 120
+        ? Math.round(rawAge)
+        : undefined;
+    const nowIso = new Date().toISOString();
+
     const userId = `user-${Date.now()}`;
     const newUser: UserRecord = {
       id: userId,
@@ -56,14 +75,18 @@ export async function POST(req: NextRequest) {
       avatarUrl:
         body.avatarUrl ||
         DEFAULT_AVATARS[db.users.length % DEFAULT_AVATARS.length],
-      createdAt: new Date().toISOString(),
+      gender: parsedGender,
+      age: parsedAge,
+      birthYear: parsedAge ? new Date().getFullYear() - parsedAge : undefined,
+      createdAt: nowIso,
+      lastLoginAt: nowIso,
     };
 
-    db.users.push(newUser);
+    await updateUserInDb(newUser);
 
     // Automatically create a starter default wishlist for the new user
     const defaultWishlistId = `wl-${Date.now()}`;
-    db.wishlists.push({
+    await updateWishlistInDb({
       id: defaultWishlistId,
       slug: `${rawUsername}-wishes`,
       ownerId: userId,
@@ -71,10 +94,18 @@ export async function POST(req: NextRequest) {
       description: "ჩემი სასურველი საჩუქრების სია. შეგიძლიათ დაჯავშნოთ ნებისმიერი ნივთი!",
       occasion: "birthday",
       isPublic: true,
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso,
     });
 
-    await writeDb(db);
+    await logAnalyticsEvent({
+      eventType: "user_registered",
+      userId: newUser.id,
+      username: newUser.username,
+      userGender: newUser.gender,
+      userAge: newUser.age,
+      wishlistId: defaultWishlistId,
+      metadata: { provider: "password" },
+    });
 
     const token = createSessionForUser(userId);
     const res = NextResponse.json({

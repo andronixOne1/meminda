@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import crypto from "crypto";
-import { readDb, UserRecord } from "./db";
+import { readDb, UserRecord, UserGender } from "./db";
 
 export const SESSION_COOKIE_NAME = "meminda_session";
 const SESSION_SECRET =
@@ -11,18 +11,28 @@ export interface PublicUser {
   username: string;
   name: string;
   email?: string;
+  gender?: UserGender;
+  age?: number;
+  birthYear?: number;
   bioKa: string;
   bioEn: string;
   avatarUrl: string;
   createdAt: string;
 }
 
-export function toPublicUser(user: UserRecord, includeEmail = false): PublicUser {
+export function toPublicUser(user: UserRecord, includePrivate = false): PublicUser {
   return {
     id: user.id,
     username: user.username,
     name: user.name,
-    ...(includeEmail ? { email: user.email } : {}),
+    ...(includePrivate
+      ? {
+          email: user.email,
+          gender: user.gender,
+          age: user.age,
+          birthYear: user.birthYear,
+        }
+      : {}),
     bioKa: user.bioKa,
     bioEn: user.bioEn,
     avatarUrl: user.avatarUrl,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDb, hashPassword } from "@/lib/db";
+import { readDb, updateUserInDb, hashPassword, logAnalyticsEvent } from "@/lib/db";
 import { createSessionForUser, SESSION_COOKIE_NAME, toPublicUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -28,6 +28,17 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+
+    user.lastLoginAt = new Date().toISOString();
+    await updateUserInDb(user);
+    await logAnalyticsEvent({
+      eventType: "user_login",
+      userId: user.id,
+      username: user.username,
+      userGender: user.gender,
+      userAge: user.age,
+      metadata: { provider: "password" },
+    });
 
     const token = createSessionForUser(user.id);
     const res = NextResponse.json({

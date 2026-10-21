@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { readDb, updateItemInDb, hashToken } from "@/lib/db";
+import {
+  readDb,
+  updateItemInDb,
+  hashToken,
+  logAnalyticsEvent,
+  extractStoreDomain,
+  inferProductCategory,
+} from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -61,6 +68,29 @@ export async function POST(req: NextRequest) {
       item.reservation = null;
       await updateItemInDb(item);
 
+      await logAnalyticsEvent({
+        eventType: "wish_unreserved",
+        userId: currentUser?.id,
+        username: currentUser?.username,
+        userGender: currentUser?.gender,
+        userAge: currentUser?.age,
+        itemId: item.id,
+        wishlistId: item.wishlistId,
+        itemTitle: item.title,
+        priceGel: item.price,
+        storeName: item.storeName,
+        storeDomain:
+          item.storeDomain || extractStoreDomain(item.productUrl, item.storeName),
+        category:
+          item.category ||
+          inferProductCategory(
+            item.title,
+            item.description,
+            item.storeName,
+            item.productUrl
+          ),
+      });
+
       return NextResponse.json({ ok: true, item });
     }
 
@@ -109,6 +139,32 @@ export async function POST(req: NextRequest) {
     };
 
     await updateItemInDb(item);
+
+    await logAnalyticsEvent({
+      eventType: "wish_reserved",
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      userGender: currentUser?.gender,
+      userAge: currentUser?.age,
+      itemId: item.id,
+      wishlistId: item.wishlistId,
+      itemTitle: item.title,
+      priceGel: item.price,
+      storeName: item.storeName,
+      storeDomain:
+        item.storeDomain || extractStoreDomain(item.productUrl, item.storeName),
+      category:
+        item.category ||
+        inferProductCategory(
+          item.title,
+          item.description,
+          item.storeName,
+          item.productUrl
+        ),
+      metadata: {
+        isAnonymous: isAnonymousForAll,
+      },
+    });
 
     const { guestCancelTokenHash, ...safeReservation } = item.reservation;
     void guestCancelTokenHash;

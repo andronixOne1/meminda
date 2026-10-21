@@ -13,5 +13,14 @@ service cloud.firestore {
     match /items/{docId} {
       allow read, write: if true;
     }
+    match /analytics_events/{docId} {
+      allow read, write: if true;
+    }
+    match /deleted_items/{docId} {
+      allow read, write: if true;
+    }
+    match /scraped_links/{docId} {
+      allow read, write: if true;
+    }
   }
 }

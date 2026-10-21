@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDb, updateWishlistInDb, WishlistRecord } from "@/lib/db";
+import { readDb, updateWishlistInDb, WishlistRecord, logAnalyticsEvent } from "@/lib/db";
 import { getCurrentUser, toPublicUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
@@ -80,6 +80,19 @@ export async function POST(req: NextRequest) {
     };
 
     await updateWishlistInDb(newWishlist);
+
+    await logAnalyticsEvent({
+      eventType: "wishlist_created",
+      userId: currentUser.id,
+      username: currentUser.username,
+      userGender: currentUser.gender,
+      userAge: currentUser.age,
+      wishlistId: newWishlist.id,
+      metadata: {
+        occasion: newWishlist.occasion,
+        title: newWishlist.title,
+      },
+    });
 
     return NextResponse.json({ wishlist: newWishlist });
   } catch {

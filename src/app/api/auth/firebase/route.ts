@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDb, updateUserInDb, updateWishlistInDb, hashPassword, UserRecord } from "@/lib/db";
+import {
+  readDb,
+  updateUserInDb,
+  updateWishlistInDb,
+  hashPassword,
+  UserRecord,
+  UserGender,
+  logAnalyticsEvent,
+} from "@/lib/db";
 import { createSessionForUser, SESSION_COOKIE_NAME, toPublicUser } from "@/lib/auth";
 import { firebaseConfig } from "@/lib/firebase";
 
@@ -76,6 +84,16 @@ export async function POST(req: NextRequest) {
     );
 
     let defaultWishlistId: string | undefined;
+    const validGenders: UserGender[] = ["female", "male", "other", "prefer_not_to_say"];
+    const parsedGender: UserGender | undefined = validGenders.includes(body.gender)
+      ? body.gender
+      : undefined;
+    const rawAge = Number(body.age);
+    const parsedAge =
+      Number.isFinite(rawAge) && rawAge >= 5 && rawAge <= 120
+        ? Math.round(rawAge)
+        : undefined;
+    const nowIso = new Date().toISOString();
 
     if (existingUser) {
       let changed = false;
@@ -88,9 +106,30 @@ export async function POST(req: NextRequest) {
         existingUser.avatarUrl = fbUser.photoUrl;
         changed = true;
       }
+      if (parsedGender && !existingUser.gender) {
+        existingUser.gender = parsedGender;
+        changed = true;
+      }
+      if (parsedAge && !existingUser.age) {
+        existingUser.age = parsedAge;
+        existingUser.birthYear = new Date().getFullYear() - parsedAge;
+        changed = true;
+      }
+      existingUser.lastLoginAt = nowIso;
+      changed = true;
+
       if (changed) {
         await updateUserInDb(existingUser);
       }
+
+      await logAnalyticsEvent({
+        eventType: "user_login",
+        userId: existingUser.id,
+        username: existingUser.username,
+        userGender: existingUser.gender,
+        userAge: existingUser.age,
+        metadata: { provider: "firebase" },
+      });
     } else {
       // 2. First-time user (via Firebase Register or Google Sign-In) -> Create Profile & Starter Wishlist
       const name =
@@ -120,7 +159,11 @@ export async function POST(req: NextRequest) {
         avatarUrl:
           fbUser.photoUrl ||
           DEFAULT_AVATARS[db.users.length % DEFAULT_AVATARS.length],
-        createdAt: new Date().toISOString(),
+        gender: parsedGender,
+        age: parsedAge,
+        birthYear: parsedAge ? new Date().getFullYear() - parsedAge : undefined,
+        createdAt: nowIso,
+        lastLoginAt: nowIso,
       };
 
       existingUser = newUser;
@@ -136,7 +179,17 @@ export async function POST(req: NextRequest) {
           "ჩემი სასურველი საჩუქრების სია. შეგიძლიათ დაჯავშნოთ ნებისმიერი ნივთი!",
         occasion: "birthday",
         isPublic: true,
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso,
+      });
+
+      await logAnalyticsEvent({
+        eventType: "user_registered",
+        userId: newUser.id,
+        username: newUser.username,
+        userGender: newUser.gender,
+        userAge: newUser.age,
+        wishlistId: defaultWishlistId,
+        metadata: { provider: "firebase" },
       });
     }
 
