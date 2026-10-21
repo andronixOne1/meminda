@@ -104,6 +104,8 @@ export default function MemindaApp() {
   const [activeReserveItem, setActiveReserveItem] = useState<WishItemRecord | null>(null);
   const [itemPendingDelete, setItemPendingDelete] = useState<WishItemRecord | null>(null);
   const [isDeletingItem, setIsDeletingItem] = useState(false);
+  const [itemPendingUnreserve, setItemPendingUnreserve] = useState<WishItemRecord | null>(null);
+  const [isUnreservingItem, setIsUnreservingItem] = useState(false);
 
   // Auth Form State
   const [authIdentifier, setAuthIdentifier] = useState("");
@@ -261,6 +263,36 @@ export default function MemindaApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Automatically restore or sync backend session cookie when Firebase Auth restores a logged-in user
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged(async (fbUser) => {
+      if (!fbUser || !fbUser.emailVerified) return;
+      try {
+        const idToken = await fbUser.getIdToken();
+        const res = await fetch("/api/auth/firebase", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            idToken,
+            email: fbUser.email || undefined,
+            name: fbUser.displayName || undefined,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            setCurrentUser((prev) =>
+              prev?.id === data.user.id ? prev : data.user
+            );
+          }
+        }
+      } catch {
+        // Ignore silent sync error
+      }
+    });
+    return () => unsub();
+  }, []);
+
   // Open a specific user's wishlist
   const openUserWishlist = (userId: string, wishlistId?: string) => {
     setSelectedUserId(userId);
@@ -411,8 +443,18 @@ export default function MemindaApp() {
     null;
 
   const isViewingOwnWishlist = Boolean(
-    currentUser && activeProfileUser && currentUser.id === activeProfileUser.id
+    currentUser &&
+      ((activeProfileUser && currentUser.id === activeProfileUser.id) ||
+        (activeWishlist && currentUser.id === activeWishlist.ownerId))
   );
+
+  const isOwnWishItem = (item: WishItemRecord): boolean => {
+    if (isViewingOwnWishlist) return true;
+    if (!currentUser) return false;
+    if (item.ownerId === currentUser.id) return true;
+    if (activeWishlist && activeWishlist.ownerId === currentUser.id) return true;
+    return false;
+  };
 
   const wishlistItems = items.filter((i) => i.wishlistId === activeWishlist?.id);
   const reservedCount = wishlistItems.filter((i) => Boolean(i.reservation)).length;
@@ -924,6 +966,16 @@ export default function MemindaApp() {
     e.preventDefault();
     if (!activeReserveItem) return;
 
+    if (isOwnWishItem(activeReserveItem)) {
+      setActiveReserveItem(null);
+      showToast(
+        lang === "ka"
+          ? "საკუთარი სურვილის დაჯავშნა არ შეიძლება"
+          : "You cannot reserve your own wish"
+      );
+      return;
+    }
+
     const finalName = reserveIsAnonymousForAll
       ? lang === "ka"
         ? "ანონიმური"
@@ -967,32 +1019,40 @@ export default function MemindaApp() {
     }
   };
 
-  // Unreserve Gift
-  const handleUnreserve = async (item: WishItemRecord) => {
-    const guestCancelToken = guestCancelTokens[item.id];
-    const res = await fetch("/api/items/reserve", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "unreserve",
-        itemId: item.id,
-        guestCancelToken,
-      }),
-    });
+  // Unreserve Gift — Confirmed from Warning Modal
+  const handleConfirmUnreserveItem = async () => {
+    if (!itemPendingUnreserve) return;
+    setIsUnreservingItem(true);
+    try {
+      const guestCancelToken = guestCancelTokens[itemPendingUnreserve.id];
+      const res = await fetch("/api/items/reserve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "unreserve",
+          itemId: itemPendingUnreserve.id,
+          guestCancelToken,
+        }),
+      });
 
-    const data = await res.json();
-    if (res.ok) {
-      await fetchAllData(activeProfileUser?.id, activeWishlist?.id, true);
-      showToast(lang === "ka" ? "ჯავშანი გაუქმდა" : "Reservation cancelled");
-    } else {
-      showToast(data.error || "Cannot unreserve");
+      const data = await res.json();
+      if (res.ok) {
+        setItemPendingUnreserve(null);
+        await fetchAllData(activeProfileUser?.id, activeWishlist?.id, true);
+        showToast(lang === "ka" ? "ჯავშანი გაუქმდა" : "Reservation cancelled");
+      } else {
+        setItemPendingUnreserve(null);
+        showToast(data.error || "Cannot unreserve");
+      }
+    } finally {
+      setIsUnreservingItem(false);
     }
   };
 
   const canVisitorUnreserve = (item: WishItemRecord): boolean => {
     if (!item.reservation) return false;
-    // Users are NOT allowed to remove other people's reservations on their own wishlist
-    if (isViewingOwnWishlist) return false;
+    // Users are NEVER allowed to remove reservations on their own wishes/wishlists
+    if (isOwnWishItem(item)) return false;
     if (
       currentUser &&
       item.reservation.reservedByUserId &&
@@ -2257,7 +2317,7 @@ export default function MemindaApp() {
 
                                 {canUnreserve && (
                                   <button
-                                    onClick={() => handleUnreserve(item)}
+                                    onClick={() => setItemPendingUnreserve(item)}
                                     className="text-[11px] font-bold text-[#FF5A5F] hover:text-rose-800 underline shrink-0 cursor-pointer"
                                   >
                                     {t.unreserveBtn}
@@ -2271,7 +2331,7 @@ export default function MemindaApp() {
 
                       <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-1">
                         {!item.reservation ? (
-                          isViewingOwnWishlist ? (
+                          isOwnWishItem(item) ? (
                             <div className="w-full inline-flex items-center justify-center gap-1.5 rounded-2xl bg-slate-100 text-slate-600 px-4 py-2.5 text-xs font-bold border border-slate-200/80">
                               <Sparkles className="h-3.5 w-3.5 text-[#FF7A45]" />
                               <span>
@@ -3476,6 +3536,91 @@ export default function MemindaApp() {
                 )}
                 <span>
                   {lang === "ka" ? "დიახ, წაშლა" : "Yes, Delete Wish"}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 7: CANCEL RESERVATION CONFIRMATION                  */}
+      {/* ========================================================= */}
+      {itemPendingUnreserve && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 sm:p-7 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-[#FF5A5F]" />
+                <span>
+                  {lang === "ka"
+                    ? "ჯავშნის გაუქმების დადასტურება"
+                    : "Cancel Reservation Confirmation"}
+                </span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setItemPendingUnreserve(null)}
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-center gap-3 rounded-2xl bg-slate-50 p-3 border border-slate-200/80">
+              <img
+                src={itemPendingUnreserve.imageUrl}
+                alt={itemPendingUnreserve.title}
+                className="h-12 w-12 rounded-xl object-cover shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                  {itemPendingUnreserve.title}
+                </h4>
+                <p className="text-xs font-extrabold text-[#FF5A5F] mt-0.5">
+                  {itemPendingUnreserve.price} ₾
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-3.5 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-950 leading-relaxed flex items-start gap-2.5">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">
+                  {lang === "ka"
+                    ? "ნამდვილად გსურთ ამ საჩუქრის ჯავშნის გაუქმება?"
+                    : "Are you sure you want to cancel your reservation for this gift?"}
+                </p>
+                <p className="mt-1 text-amber-900/90">
+                  {lang === "ka"
+                    ? "ჯავშნის გაუქმების შემდეგ საჩუქარი ისევ გახდება ხელმისაწვდომი სხვა სტუმრებისთვის."
+                    : "Once cancelled, this gift will become available for other guests to reserve."}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setItemPendingUnreserve(null)}
+                disabled={isUnreservingItem}
+                className="rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                {t.cancelBtn}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmUnreserveItem}
+                disabled={isUnreservingItem}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#FF5A5F] hover:bg-[#FF4248] text-white px-5 py-2.5 text-xs sm:text-sm font-extrabold shadow-md transition cursor-pointer disabled:opacity-60"
+              >
+                {isUnreservingItem && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                <span>
+                  {lang === "ka"
+                    ? "დიახ, ჯავშნის გაუქმება"
+                    : "Yes, Cancel Reservation"}
                 </span>
               </button>
             </div>

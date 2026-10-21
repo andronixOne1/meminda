@@ -20,11 +20,25 @@ export async function POST(req: NextRequest) {
     }
 
     const item = db.items[itemIndex];
+    const parentWishlist = db.wishlists.find((w) => w.id === item.wishlistId);
     const currentUser = await getCurrentUser();
+    const isItemOwner = Boolean(
+      currentUser &&
+        (currentUser.id === item.ownerId ||
+          (parentWishlist && currentUser.id === parentWishlist.ownerId))
+    );
 
     if (action === "unreserve") {
       if (!item.reservation) {
         return NextResponse.json({ ok: true, item });
+      }
+
+      // Wishlist owners are NEVER allowed to remove reservations on their own wishlist
+      if (isItemOwner) {
+        return NextResponse.json(
+          { error: "საკუთარ სიაში სხვისი ჯავშნის გაუქმება არ შეიძლება" },
+          { status: 403 }
+        );
       }
 
       const guestToken = body.guestCancelToken || "";
@@ -37,7 +51,6 @@ export async function POST(req: NextRequest) {
         item.reservation.guestCancelTokenHash &&
         hashToken(guestToken) === item.reservation.guestCancelTokenHash;
 
-      // Wishlist owners are NOT allowed to remove other people's reservations on their own wishlist
       if (!isReserverUser && !isGuestTokenMatch) {
         return NextResponse.json(
           { error: "ჯავშნის გაუქმება შეუძლია მხოლოდ იმ ადამიანს, ვინც საჩუქარი დაჯავშნა" },
@@ -52,7 +65,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Reserve action: Users cannot reserve their own wishes
-    if (currentUser && currentUser.id === item.ownerId) {
+    if (isItemOwner) {
       return NextResponse.json(
         { error: "საკუთარი სურვილის დაჯავშნა არ შეიძლება" },
         { status: 403 }
