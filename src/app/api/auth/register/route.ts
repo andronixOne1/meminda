@@ -9,6 +9,7 @@ import {
   logAnalyticsEvent,
 } from "@/lib/db";
 import { createSessionForUser, SESSION_COOKIE_NAME, toPublicUser } from "@/lib/auth";
+import { hasProfanityInFields, PROFANITY_ERROR_KA } from "@/lib/profanity";
 
 const DEFAULT_AVATARS = [
   "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
@@ -34,6 +35,10 @@ export async function POST(req: NextRequest) {
         { error: "გთხოვთ შეავსოთ ყველა სავალდებულო ველი (პაროლი მინ. 4 სიმბოლო)" },
         { status: 400 }
       );
+    }
+
+    if (hasProfanityInFields(name, rawUsername, body.username, bio)) {
+      return NextResponse.json({ error: PROFANITY_ERROR_KA }, { status: 400 });
     }
 
     const db = await readDb();

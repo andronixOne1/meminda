@@ -9,6 +9,7 @@ import {
   inferProductCategory,
 } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { hasProfanityInFields, PROFANITY_ERROR_KA } from "@/lib/profanity";
 
 export async function POST(req: NextRequest) {
   try {
@@ -122,6 +123,10 @@ export async function POST(req: NextRequest) {
         { error: "გთხოვთ მიუთითოთ თქვენი სახელი ან აირჩიოთ ანონიმური დაჯავშნა" },
         { status: 400 }
       );
+    }
+
+    if (hasProfanityInFields(reservedByName, body.note)) {
+      return NextResponse.json({ error: PROFANITY_ERROR_KA }, { status: 400 });
     }
 
     const guestCancelToken = crypto.randomBytes(16).toString("hex");

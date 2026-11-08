@@ -10,6 +10,7 @@ import {
 } from "@/lib/db";
 import { createSessionForUser, SESSION_COOKIE_NAME, toPublicUser } from "@/lib/auth";
 import { firebaseConfig } from "@/lib/firebase";
+import { hasProfanityInFields, PROFANITY_ERROR_KA } from "@/lib/profanity";
 
 const DEFAULT_AVATARS = [
   "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
@@ -52,6 +53,10 @@ export async function POST(req: NextRequest) {
     const idToken = body.idToken;
     if (!idToken || typeof idToken !== "string") {
       return NextResponse.json({ error: "Missing Firebase ID token" }, { status: 400 });
+    }
+
+    if (hasProfanityInFields(body.name, body.username, body.bio)) {
+      return NextResponse.json({ error: PROFANITY_ERROR_KA }, { status: 400 });
     }
 
     const fbUser = await verifyFirebaseIdToken(idToken);

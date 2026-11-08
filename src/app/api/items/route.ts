@@ -11,6 +11,7 @@ import {
   WishItemRecord,
 } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { hasProfanityInFields, PROFANITY_ERROR_KA } from "@/lib/profanity";
 
 const VALID_CATEGORIES: ProductCategory[] = [
   "tech",
@@ -53,6 +54,10 @@ export async function POST(req: NextRequest) {
         { error: "Wishlist and item title are required" },
         { status: 400 }
       );
+    }
+
+    if (hasProfanityInFields(title, description, storeName)) {
+      return NextResponse.json({ error: PROFANITY_ERROR_KA }, { status: 400 });
     }
 
     const db = await readDb();

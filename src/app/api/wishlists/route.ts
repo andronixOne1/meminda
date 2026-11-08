@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readDb, updateWishlistInDb, WishlistRecord, logAnalyticsEvent } from "@/lib/db";
 import { getCurrentUser, toPublicUser } from "@/lib/auth";
+import { hasProfanityInFields, PROFANITY_ERROR_KA } from "@/lib/profanity";
 
 export async function GET(req: NextRequest) {
   const db = await readDb();
@@ -56,6 +57,10 @@ export async function POST(req: NextRequest) {
 
     if (!title) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
+    }
+
+    if (hasProfanityInFields(title, description)) {
+      return NextResponse.json({ error: PROFANITY_ERROR_KA }, { status: 400 });
     }
 
     const db = await readDb();

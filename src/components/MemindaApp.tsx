@@ -39,6 +39,11 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { TRANSLATIONS, Language } from "@/lib/meminda-data";
+import {
+  hasProfanityInFields,
+  PROFANITY_ERROR_KA,
+  PROFANITY_ERROR_EN,
+} from "@/lib/profanity";
 import type { PublicUser } from "@/lib/auth";
 import type {
   WishlistRecord,
@@ -404,6 +409,12 @@ export default function MemindaApp() {
     e.preventDefault();
     if (!currentUser) return;
     setSettingsError(null);
+
+    if (hasProfanityInFields(settingsName, settingsUsername, settingsBio)) {
+      setSettingsError(lang === "ka" ? PROFANITY_ERROR_KA : PROFANITY_ERROR_EN);
+      return;
+    }
+
     setIsSavingSettings(true);
 
     try {
@@ -709,6 +720,11 @@ export default function MemindaApp() {
     e.preventDefault();
     setAuthError(null);
 
+    if (hasProfanityInFields(regName, regUsername, regBio)) {
+      setAuthError(lang === "ka" ? PROFANITY_ERROR_KA : PROFANITY_ERROR_EN);
+      return;
+    }
+
     if (authPassword.length < 6) {
       setAuthError(
         lang === "ka"
@@ -908,6 +924,13 @@ export default function MemindaApp() {
     e.preventDefault();
     if (!wlTitle.trim()) return;
 
+    if (hasProfanityInFields(wlTitle, wlDesc)) {
+      showToast(
+        lang === "ka" ? `⚠️ ${PROFANITY_ERROR_KA}` : `⚠️ ${PROFANITY_ERROR_EN}`
+      );
+      return;
+    }
+
     const res = await fetch("/api/wishlists", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -982,6 +1005,13 @@ export default function MemindaApp() {
   const handleCreateWishItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeWishlist || !newTitle.trim()) return;
+
+    if (hasProfanityInFields(newTitle, newDesc, newStore)) {
+      showToast(
+        lang === "ka" ? `⚠️ ${PROFANITY_ERROR_KA}` : `⚠️ ${PROFANITY_ERROR_EN}`
+      );
+      return;
+    }
 
     const res = await fetch("/api/items", {
       method: "POST",
@@ -1065,6 +1095,18 @@ export default function MemindaApp() {
       : reserveName.trim();
 
     if (!finalName && !reserveIsAnonymousForAll) return;
+
+    if (
+      hasProfanityInFields(
+        reserveIsAnonymousForAll ? "" : finalName,
+        reserveNote
+      )
+    ) {
+      showToast(
+        lang === "ka" ? `⚠️ ${PROFANITY_ERROR_KA}` : `⚠️ ${PROFANITY_ERROR_EN}`
+      );
+      return;
+    }
 
     const res = await fetch("/api/items/reserve", {
       method: "POST",
@@ -3788,7 +3830,7 @@ export default function MemindaApp() {
                 disabled={isUnreservingItem}
                 className="rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
               >
-                {t.cancelBtn}
+                {lang === "ka" ? "დაბრუნება" : "Go Back"}
               </button>
               <button
                 type="button"
@@ -3801,8 +3843,8 @@ export default function MemindaApp() {
                 )}
                 <span>
                   {lang === "ka"
-                    ? "დიახ, ჯავშნის გაუქმება"
-                    : "Yes, Cancel Reservation"}
+                    ? "ჯავშნის გაუქმება"
+                    : "Cancel Reservation"}
                 </span>
               </button>
             </div>

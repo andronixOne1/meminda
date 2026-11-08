@@ -8,6 +8,7 @@ import {
   logAnalyticsEvent,
 } from "@/lib/db";
 import { getCurrentUser, toPublicUser } from "@/lib/auth";
+import { hasProfanityInFields, PROFANITY_ERROR_KA } from "@/lib/profanity";
 
 export async function PUT(req: NextRequest) {
   const currentUser = await getCurrentUser();
@@ -52,6 +53,10 @@ export async function PUT(req: NextRequest) {
         { error: "სახელი, Username და ელ-ფოსტა სავალდებულოა" },
         { status: 400 }
       );
+    }
+
+    if (hasProfanityInFields(newName, newUsername, body.username, newBio)) {
+      return NextResponse.json({ error: PROFANITY_ERROR_KA }, { status: 400 });
     }
 
     // Check username uniqueness if changed
