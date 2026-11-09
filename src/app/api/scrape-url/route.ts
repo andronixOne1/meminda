@@ -1372,9 +1372,9 @@ export async function POST(req: NextRequest) {
     await logAnalyticsEvent({
       eventType: "product_scraped",
       userId: currentUser?.id,
-      username: currentUser?.username,
       userGender: currentUser?.gender,
       userAge: currentUser?.age,
+      isMinorUnder16: currentUser?.isMinorUnder16,
       itemTitle: finalTitle.slice(0, 120),
       priceGel: conv.priceGel || undefined,
       originalPrice: conv.originalPrice,

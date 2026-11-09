@@ -89,9 +89,9 @@ export async function POST(req: NextRequest) {
     await logAnalyticsEvent({
       eventType: "wishlist_created",
       userId: currentUser.id,
-      username: currentUser.username,
       userGender: currentUser.gender,
       userAge: currentUser.age,
+      isMinorUnder16: currentUser.isMinorUnder16,
       wishlistId: newWishlist.id,
       metadata: {
         occasion: newWishlist.occasion,

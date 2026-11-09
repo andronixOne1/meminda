@@ -34,9 +34,9 @@ export async function POST(req: NextRequest) {
     await logAnalyticsEvent({
       eventType: "user_login",
       userId: user.id,
-      username: user.username,
       userGender: user.gender,
       userAge: user.age,
+      isMinorUnder16: user.isMinorUnder16,
       metadata: { provider: "password" },
     });
 

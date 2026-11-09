@@ -35,6 +35,8 @@ export interface UserRecord {
   gender?: UserGender;
   age?: number;
   birthYear?: number;
+  isMinorUnder16?: boolean;
+  acceptedPrivacyAt?: string;
   bioKa: string;
   bioEn: string;
   avatarUrl: string;
@@ -103,6 +105,7 @@ export interface AnalyticsEventRecord {
   username?: string;
   userGender?: UserGender;
   userAge?: number;
+  isMinorUnder16?: boolean;
   wishlistId?: string;
   wishlistOccasion?: WishlistRecord["occasion"];
   itemId?: string;
@@ -717,8 +720,102 @@ export function inferProductCategory(
 }
 
 /**
+ * Sanitizes demographic inputs according to Georgian Personal Data Protection Law (Article 7):
+ * For underage individuals (under 16), NO demographic or analytics data (age, birthYear, gender) is stored.
+ */
+export function sanitizeUserDemographics(
+  rawGender: unknown,
+  rawAge: unknown
+): {
+  isMinorUnder16: boolean;
+  gender?: UserGender;
+  age?: number;
+  birthYear?: number;
+} {
+  const validGenders: UserGender[] = [
+    "female",
+    "male",
+    "other",
+    "prefer_not_to_say",
+  ];
+  const parsedGender: UserGender | undefined = validGenders.includes(
+    rawGender as UserGender
+  )
+    ? (rawGender as UserGender)
+    : undefined;
+
+  const numAge = Number(rawAge);
+  if (Number.isFinite(numAge) && numAge > 0 && numAge < 16) {
+    // Under 16: Do NOT collect or store any demographic data
+    return {
+      isMinorUnder16: true,
+      gender: undefined,
+      age: undefined,
+      birthYear: undefined,
+    };
+  }
+
+  if (Number.isFinite(numAge) && numAge >= 16 && numAge <= 120) {
+    const roundedAge = Math.round(numAge);
+    return {
+      isMinorUnder16: false,
+      gender: parsedGender,
+      age: roundedAge,
+      birthYear: new Date().getFullYear() - roundedAge,
+    };
+  }
+
+  return {
+    isMinorUnder16: false,
+    gender: parsedGender,
+    age: undefined,
+    birthYear: undefined,
+  };
+}
+
+/**
+ * Permanently deletes a user's account, wishlists, and active wish items from Cloud Firestore
+ * (Right to Erasure / მონაცემთა წაშლის უფლება).
+ */
+export async function deleteUserAccountFromDb(userId: string): Promise<void> {
+  try {
+    const db = await readDb();
+    const userWishlists = db.wishlists.filter((w) => w.ownerId === userId);
+    const userItems = db.items.filter((i) => i.ownerId === userId);
+
+    const batch = writeBatch(firestoreDb);
+    batch.delete(doc(firestoreDb, "users", userId));
+
+    for (const wl of userWishlists) {
+      batch.delete(doc(firestoreDb, "wishlists", wl.id));
+      lastKnownWishlistIds.delete(wl.id);
+    }
+
+    for (const item of userItems) {
+      batch.delete(doc(firestoreDb, "items", item.id));
+      lastKnownItemIds.delete(item.id);
+    }
+
+    await batch.commit();
+  } catch (err) {
+    console.error("Failed to delete user account from Firestore:", err);
+  }
+
+  try {
+    const localData = readLocalFallbackDb();
+    localData.users = localData.users.filter((u) => u.id !== userId);
+    localData.wishlists = localData.wishlists.filter((w) => w.ownerId !== userId);
+    localData.items = localData.items.filter((i) => i.ownerId !== userId);
+    writeLocalFallbackDb(localData);
+  } catch {
+    // Ignore local fallback error
+  }
+}
+
+/**
  * Archives a deleted WishItemRecord into the permanent `deleted_items` Firestore collection
  * so deleted wishes, their lifespan, and whether they were reserved remain available for analytics.
+ * Skips archiving if the user is under 16.
  */
 export async function archiveDeletedItemInDb(
   item: WishItemRecord,
@@ -730,6 +827,10 @@ export async function archiveDeletedItemInDb(
     0,
     Math.round((Date.now() - createdMs) / 1000)
   );
+
+  const isMinor =
+    Boolean(deletedByUser?.isMinorUnder16) ||
+    (typeof deletedByUser?.age === "number" && deletedByUser.age < 16);
 
   const archived: DeletedWishItemRecord = {
     ...item,
@@ -745,12 +846,17 @@ export async function archiveDeletedItemInDb(
       ),
     wishlistedAt: item.wishlistedAt || item.createdAt,
     deletedAt,
-    deletedByUserId: deletedByUser?.id || item.ownerId,
+    deletedByUserId: isMinor ? "anonymous" : deletedByUser?.id || item.ownerId,
     wasReservedWhenDeleted: Boolean(item.reservation),
     lifespanSeconds,
-    ownerGender: deletedByUser?.gender,
-    ownerAge: deletedByUser?.age,
+    ownerGender: isMinor ? undefined : deletedByUser?.gender,
+    ownerAge: isMinor ? undefined : deletedByUser?.age,
   };
+
+  // Do NOT collect or store analytics records for users under 16
+  if (isMinor) {
+    return archived;
+  }
 
   try {
     const ref = doc(firestoreDb, "deleted_items", `${item.id}_${Date.now()}`);
@@ -764,13 +870,25 @@ export async function archiveDeletedItemInDb(
 
 /**
  * Logs a structured analytics event to the `analytics_events` Firestore collection.
+ * Automatically skips logging any data for users under 16.
  */
 export async function logAnalyticsEvent(
   event: Omit<AnalyticsEventRecord, "id" | "timestamp"> & { timestamp?: string }
 ): Promise<void> {
+  if (
+    event.isMinorUnder16 ||
+    (typeof event.userAge === "number" && event.userAge < 16)
+  ) {
+    // Do NOT collect any analytics data for underage users (< 16)
+    return;
+  }
+
   const id = `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const { username, ...anonymizedEvent } = event;
+  void username;
+
   const fullEvent: AnalyticsEventRecord = {
-    ...event,
+    ...anonymizedEvent,
     id,
     timestamp: event.timestamp || new Date().toISOString(),
   };

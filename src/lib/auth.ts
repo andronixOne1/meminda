@@ -14,6 +14,7 @@ export interface PublicUser {
   gender?: UserGender;
   age?: number;
   birthYear?: number;
+  isMinorUnder16?: boolean;
   bioKa: string;
   bioEn: string;
   avatarUrl: string;
@@ -31,6 +32,7 @@ export function toPublicUser(user: UserRecord, includePrivate = false): PublicUs
           gender: user.gender,
           age: user.age,
           birthYear: user.birthYear,
+          isMinorUnder16: user.isMinorUnder16,
         }
       : {}),
     bioKa: user.bioKa,

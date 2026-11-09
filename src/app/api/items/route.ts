@@ -95,9 +95,9 @@ export async function POST(req: NextRequest) {
     await logAnalyticsEvent({
       eventType: "wish_created",
       userId: currentUser.id,
-      username: currentUser.username,
       userGender: currentUser.gender,
       userAge: currentUser.age,
+      isMinorUnder16: currentUser.isMinorUnder16,
       itemId: newItem.id,
       wishlistId: newItem.wishlistId,
       itemTitle: newItem.title,
@@ -141,9 +141,9 @@ export async function DELETE(req: NextRequest) {
   await logAnalyticsEvent({
     eventType: "wish_deleted",
     userId: currentUser.id,
-    username: currentUser.username,
     userGender: currentUser.gender,
     userAge: currentUser.age,
+    isMinorUnder16: currentUser.isMinorUnder16,
     itemId: item.id,
     wishlistId: item.wishlistId,
     itemTitle: item.title,

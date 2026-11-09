@@ -3,11 +3,12 @@ import {
   readDb,
   updateUserInDb,
   updateItemInDb,
+  deleteUserAccountFromDb,
   hashPassword,
-  UserGender,
+  sanitizeUserDemographics,
   logAnalyticsEvent,
 } from "@/lib/db";
-import { getCurrentUser, toPublicUser } from "@/lib/auth";
+import { getCurrentUser, toPublicUser, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { hasProfanityInFields, PROFANITY_ERROR_KA } from "@/lib/profanity";
 
 export async function PUT(req: NextRequest) {
@@ -100,23 +101,27 @@ export async function PUT(req: NextRequest) {
     user.bioEn = newBio || `${newName}'s Wishlist Profile ✨`;
     user.updatedAt = new Date().toISOString();
 
-    const validGenders: UserGender[] = ["female", "male", "other", "prefer_not_to_say"];
-    if (body.gender !== undefined) {
-      if (validGenders.includes(body.gender)) {
-        user.gender = body.gender;
-      } else if (body.gender === "") {
-        user.gender = undefined;
-      }
-    }
+    if (body.gender !== undefined || body.age !== undefined) {
+      const effectiveGender =
+        body.gender !== undefined ? body.gender : user.gender;
+      const effectiveAge =
+        body.age !== undefined && body.age !== "" && body.age !== null
+          ? body.age
+          : body.age === "" || body.age === null
+          ? undefined
+          : user.age;
 
-    if (body.age !== undefined) {
-      const rawAge = Number(body.age);
-      if (Number.isFinite(rawAge) && rawAge >= 5 && rawAge <= 120) {
-        user.age = Math.round(rawAge);
-        user.birthYear = new Date().getFullYear() - Math.round(rawAge);
-      } else if (body.age === "" || body.age === null) {
+      const demo = sanitizeUserDemographics(effectiveGender, effectiveAge);
+      if (demo.isMinorUnder16) {
+        user.isMinorUnder16 = true;
+        user.gender = undefined;
         user.age = undefined;
         user.birthYear = undefined;
+      } else {
+        user.isMinorUnder16 = undefined;
+        user.gender = demo.gender;
+        user.age = demo.age;
+        user.birthYear = demo.birthYear;
       }
     }
 
@@ -129,9 +134,9 @@ export async function PUT(req: NextRequest) {
     await logAnalyticsEvent({
       eventType: "user_profile_updated",
       userId: user.id,
-      username: user.username,
       userGender: user.gender,
       userAge: user.age,
+      isMinorUnder16: user.isMinorUnder16,
     });
 
     // Also update reservedByName on items this user reserved if they didn't reserve anonymously
@@ -154,6 +159,25 @@ export async function PUT(req: NextRequest) {
   } catch {
     return NextResponse.json(
       { error: "Failed to update profile settings" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE() {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    await deleteUserAccountFromDb(currentUser.id);
+    const res = NextResponse.json({ ok: true });
+    res.cookies.delete(SESSION_COOKIE_NAME);
+    return res;
+  } catch {
+    return NextResponse.json(
+      { error: "Failed to delete account" },
       { status: 500 }
     );
   }

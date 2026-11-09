@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { collection, getDocs } from "firebase/firestore";
 import { firestoreDb } from "@/lib/firebase";
 import {
@@ -10,8 +10,25 @@ import {
   ProductCategory,
 } from "@/lib/db";
 
-export async function GET() {
+const DEFAULT_ADMIN_KEY = "meminda-admin-2026";
+
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const providedKey =
+      searchParams.get("key") || req.headers.get("x-admin-key") || "";
+    const expectedKey = process.env.ANALYTICS_ADMIN_KEY || DEFAULT_ADMIN_KEY;
+
+    if (providedKey !== expectedKey) {
+      return NextResponse.json(
+        {
+          error:
+            "Unauthorized. Provide ?key=<ANALYTICS_ADMIN_KEY> to access analytics.",
+        },
+        { status: 401 }
+      );
+    }
+
     const db = await readDb();
 
     // Also fetch archived deleted_items and recent analytics_events from Firestore
@@ -47,7 +64,7 @@ export async function GET() {
     };
 
     const ageGroups: Record<string, number> = {
-      "under_18": 0,
+      "16_17": 0,
       "18_24": 0,
       "25_34": 0,
       "35_44": 0,
@@ -59,14 +76,19 @@ export async function GET() {
     let usersWithAgeCount = 0;
 
     for (const u of db.users) {
+      // Skip any demographic aggregation for users under 16
+      if (u.isMinorUnder16 || (typeof u.age === "number" && u.age < 16)) {
+        continue;
+      }
+
       const g = u.gender || "unspecified";
       genderBreakdown[g] = (genderBreakdown[g] || 0) + 1;
 
       const age = u.age;
-      if (typeof age === "number" && age > 0) {
+      if (typeof age === "number" && age >= 16) {
         totalAgeSum += age;
         usersWithAgeCount += 1;
-        if (age < 18) ageGroups["under_18"] += 1;
+        if (age < 18) ageGroups["16_17"] += 1;
         else if (age <= 24) ageGroups["18_24"] += 1;
         else if (age <= 34) ageGroups["25_34"] += 1;
         else if (age <= 44) ageGroups["35_44"] += 1;

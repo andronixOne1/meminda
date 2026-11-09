@@ -117,6 +117,10 @@ export default function MemindaApp() {
   const [isDeletingItem, setIsDeletingItem] = useState(false);
   const [itemPendingUnreserve, setItemPendingUnreserve] = useState<WishItemRecord | null>(null);
   const [isUnreservingItem, setIsUnreservingItem] = useState(false);
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+  const [regAcceptedPrivacy, setRegAcceptedPrivacy] = useState(false);
+  const [isConfirmingAccountDelete, setIsConfirmingAccountDelete] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   // Auth Form State
   const [authIdentifier, setAuthIdentifier] = useState("");
@@ -360,6 +364,7 @@ export default function MemindaApp() {
     setSettingsAvatar(currentUser.avatarUrl || "");
     setSettingsNewPassword("");
     setSettingsError(null);
+    setIsConfirmingAccountDelete(false);
     setIsProfileSettingsOpen(true);
   };
 
@@ -917,6 +922,57 @@ export default function MemindaApp() {
     await fetch("/api/auth/logout", { method: "POST" });
     setCurrentUser(null);
     showToast(lang === "ka" ? "ანგარიშიდან გამოხვედით" : "Logged out");
+  };
+
+  const handleDeleteMyAccount = async () => {
+    if (!currentUser) return;
+    setIsDeletingAccount(true);
+    try {
+      const res = await fetch("/api/auth/profile", { method: "DELETE" });
+      if (res.ok) {
+        try {
+          if (auth.currentUser) {
+            await auth.currentUser.delete();
+          }
+        } catch {
+          // Ignore if Firebase requires recent login; signOut below still clears session
+        }
+        try {
+          await signOut(auth);
+        } catch {
+          // Ignore
+        }
+        try {
+          localStorage.removeItem(USER_SESSION_CACHE_KEY);
+        } catch {
+          // Ignore
+        }
+        setIsProfileSettingsOpen(false);
+        setIsConfirmingAccountDelete(false);
+        setCurrentUser(null);
+        setActivePage("home");
+        await fetchAllData();
+        showToast(
+          lang === "ka"
+            ? "თქვენი ანგარიში და პერსონალური მონაცემები წაიშალა"
+            : "Your account and personal data have been deleted"
+        );
+      } else {
+        setSettingsError(
+          lang === "ka"
+            ? "ანგარიშის წაშლა ვერ მოხერხდა"
+            : "Could not delete account"
+        );
+      }
+    } catch {
+      setSettingsError(
+        lang === "ka"
+          ? "ქსელის შეცდომა ანგარიშის წაშლისას"
+          : "Network error while deleting account"
+      );
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   // Create New Wishlist Handler
@@ -2836,15 +2892,22 @@ export default function MemindaApp() {
                     <div className="grid grid-cols-2 gap-2.5">
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">
-                          {t.authGenderLabel}
+                          {Number(regAge) > 0 && Number(regAge) < 16
+                            ? t.authGenderLabel.replace(" *", "")
+                            : t.authGenderLabel}
                         </label>
                         <select
-                          required
-                          value={regGender}
+                          required={!(Number(regAge) > 0 && Number(regAge) < 16)}
+                          disabled={Number(regAge) > 0 && Number(regAge) < 16}
+                          value={
+                            Number(regAge) > 0 && Number(regAge) < 16
+                              ? ""
+                              : regGender
+                          }
                           onChange={(e) =>
                             setRegGender(e.target.value as UserGender | "")
                           }
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-100 disabled:text-slate-400"
                         >
                           <option value="" disabled>
                             {t.authGenderSelectPlaceholder}
@@ -2873,6 +2936,13 @@ export default function MemindaApp() {
                         />
                       </div>
                     </div>
+                    {Number(regAge) > 0 && Number(regAge) < 16 && (
+                      <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11px] font-semibold text-emerald-900">
+                        {lang === "ka"
+                          ? "🔒 16 წლამდე მომხმარებლების ასაკი, სქესი და სტატისტიკური მონაცემები არ გროვდება და არ ინახება."
+                          : "🔒 For users under 16, age, gender, and analytics data are not collected or stored."}
+                      </div>
+                    )}
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">
                         {t.authBioLabel}
@@ -2885,6 +2955,41 @@ export default function MemindaApp() {
                         className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                       />
                     </div>
+
+                    <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        required
+                        checked={regAcceptedPrivacy}
+                        onChange={(e) => setRegAcceptedPrivacy(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      />
+                      <span className="text-xs text-slate-600 leading-snug">
+                        {lang === "ka" ? (
+                          <>
+                            ვეთანხმები{" "}
+                            <button
+                              type="button"
+                              onClick={() => setIsPrivacyModalOpen(true)}
+                              className="font-bold text-[#FF5A5F] hover:underline cursor-pointer"
+                            >
+                              მოხმარების წესებსა და კონფიდენციალურობის პოლიტიკას
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            I agree to the{" "}
+                            <button
+                              type="button"
+                              onClick={() => setIsPrivacyModalOpen(true)}
+                              className="font-bold text-[#FF5A5F] hover:underline cursor-pointer"
+                            >
+                              Terms of Use & Privacy Policy
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    </label>
 
                     <button
                       type="submit"
@@ -3130,6 +3235,66 @@ export default function MemindaApp() {
                   placeholder={t.newPasswordPlaceholder}
                   className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
+              </div>
+
+              {/* Privacy & Account Deletion Section */}
+              <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPrivacyModalOpen(true)}
+                    className="text-xs font-bold text-slate-600 hover:text-slate-900 underline cursor-pointer"
+                  >
+                    {lang === "ka"
+                      ? "🔒 კონფიდენციალურობის პოლიტიკა და წესები"
+                      : "🔒 Privacy Policy & Terms"}
+                  </button>
+
+                  {!isConfirmingAccountDelete && (
+                    <button
+                      type="button"
+                      onClick={() => setIsConfirmingAccountDelete(true)}
+                      className="text-xs font-bold text-rose-600 hover:text-rose-800 cursor-pointer"
+                    >
+                      {lang === "ka" ? "ანგარიშის წაშლა" : "Delete Account"}
+                    </button>
+                  )}
+                </div>
+
+                {isConfirmingAccountDelete && (
+                  <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 space-y-2.5">
+                    <p className="text-xs font-bold text-rose-900">
+                      {lang === "ka"
+                        ? "⚠️ ნამდვილად გსურთ თქვენი ანგარიშის, სურვილების სიების და პერსონალური მონაცემების სამუდამოდ წაშლა?"
+                        : "⚠️ Are you sure you want to permanently delete your account, wishlists, and personal data?"}
+                    </p>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsConfirmingAccountDelete(false)}
+                        disabled={isDeletingAccount}
+                        className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-white transition cursor-pointer"
+                      >
+                        {lang === "ka" ? "დაბრუნება" : "Go Back"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeleteMyAccount}
+                        disabled={isDeletingAccount}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 text-xs font-extrabold shadow-xs transition cursor-pointer disabled:opacity-60"
+                      >
+                        {isDeletingAccount && (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        )}
+                        <span>
+                          {lang === "ka"
+                            ? "დიახ, ანგარიშის წაშლა"
+                            : "Yes, Delete My Account"}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
@@ -3846,6 +4011,180 @@ export default function MemindaApp() {
                     ? "ჯავშნის გაუქმება"
                     : "Cancel Reservation"}
                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* FOOTER WITH PRIVACY POLICY & TERMS LINK                   */}
+      {/* ========================================================= */}
+      <footer className="max-w-6xl mx-auto px-4 sm:px-6 pt-12 pb-6 text-center">
+        <div className="border-t border-orange-200/60 pt-5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+          <span>
+            © {new Date().getFullYear()} Meminda.ge —{" "}
+            {lang === "ka"
+              ? "სურვილებისა და საჩუქრების პლატფორმა"
+              : "Universal Wishlist & Gift Registry"}
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsPrivacyModalOpen(true)}
+            className="font-bold text-slate-600 hover:text-[#FF5A5F] underline transition cursor-pointer"
+          >
+            {lang === "ka"
+              ? "კონფიდენციალურობის პოლიტიკა და მოხმარების წესები"
+              : "Privacy Policy & Terms of Use"}
+          </button>
+        </div>
+      </footer>
+
+      {/* ========================================================= */}
+      {/* MODAL 8: PRIVACY POLICY & TERMS OF USE                    */}
+      {/* ========================================================= */}
+      {isPrivacyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-7 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                <Lock className="h-5 w-5 text-[#FF5A5F]" />
+                <span>
+                  {lang === "ka"
+                    ? "კონფიდენციალურობის პოლიტიკა და წესები"
+                    : "Privacy Policy & Terms of Use"}
+                </span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsPrivacyModalOpen(false)}
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {lang === "ka" ? (
+              <div className="mt-4 space-y-3.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
+                <p>
+                  <strong>Meminda.ge („მემინდა“)</strong> იცავს მომხმარებელთა
+                  პერსონალურ მონაცემებს საქართველოს კანონის{" "}
+                  <em>„პერსონალურ მონაცემთა დაცვის შესახებ“</em> შესაბამისად.
+                </p>
+
+                <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 space-y-2">
+                  <h3 className="font-extrabold text-slate-900">
+                    1. რა მონაცემებს ვამუშავებთ
+                  </h3>
+                  <p>
+                    რეგისტრაციისა და სურვილების სიის შექმნისას ინახება: სახელი,
+                    მომხმარებლის სახელი (username), ელ-ფოსტა, სურვილების სიაში
+                    დამატებული პროდუქტების ბმულები/ფასები და (მხოლოდ 16+ წლის
+                    მომხმარებლებისთვის) ასაკი და სქესი.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3.5 space-y-1.5">
+                  <h3 className="font-extrabold text-emerald-950">
+                    2. 16 წლამდე არასრულწლოვანთა დაცვა 🔒
+                  </h3>
+                  <p className="text-emerald-900">
+                    თუ მომხმარებელი 16 წლამდე ასაკისაა, პლატფორმა{" "}
+                    <strong>არ აგროვებს და არ ინახავს</strong> მის ასაკს, სქესს
+                    და ანალიტიკურ/სტატისტიკურ მონაცემებს.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 space-y-2">
+                  <h3 className="font-extrabold text-slate-900">
+                    3. რისთვის გამოიყენება მონაცემები
+                  </h3>
+                  <p>
+                    • თქვენი სურვილების სიის გამოსაჩენად და მეგობრების მიერ
+                    საჩუქრების დასაჯავშნად.
+                    <br />• <strong>ანონიმიზებული სტატისტიკური ანალიტიკისთვის</strong>{" "}
+                    (მაგ: რომელი კატეგორიის საჩუქრები ან მაღაზიებია ყველაზე
+                    პოპულარული). თქვენი პერსონალური მონაცემები (ელ-ფოსტა,
+                    სახელი) არასოდეს გადაეცემა მესამე პირებს.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 space-y-2">
+                  <h3 className="font-extrabold text-slate-900">
+                    4. მონაცემთა წაშლის უფლება
+                  </h3>
+                  <p>
+                    თქვენ ნებისმიერ დროს შეგიძლიათ წაშალოთ თქვენი ანგარიში და
+                    პერსონალური მონაცემები პირდაპირ{" "}
+                    <strong>პროფილის პარამეტრებიდან („ანგარიშის წაშლა“)</strong>.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
+                <p>
+                  <strong>Meminda.ge</strong> processes personal data in full
+                  compliance with the{" "}
+                  <em>Law of Georgia on Personal Data Protection</em>.
+                </p>
+
+                <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 space-y-2">
+                  <h3 className="font-extrabold text-slate-900">
+                    1. Data We Collect
+                  </h3>
+                  <p>
+                    When you register and create wishlists, we store your name,
+                    username, email address, wishlist items, and (Strictly for
+                    users aged 16+) age and gender.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3.5 space-y-1.5">
+                  <h3 className="font-extrabold text-emerald-950">
+                    2. Protection for Users Under 16 🔒
+                  </h3>
+                  <p className="text-emerald-900">
+                    For users under the age of 16, Meminda{" "}
+                    <strong>does not collect or store</strong> age, gender, or
+                    any statistical/analytics tracking events.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 space-y-2">
+                  <h3 className="font-extrabold text-slate-900">
+                    3. How Data Is Used
+                  </h3>
+                  <p>
+                    • To display your public wishlists so friends can reserve
+                    gifts.
+                    <br />• To generate{" "}
+                    <strong>anonymized, aggregated statistics</strong> (such as
+                    popular gift categories and linked stores). Your personal
+                    identifiers (name, email) are never sold or shared with
+                    third parties.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 space-y-2">
+                  <h3 className="font-extrabold text-slate-900">
+                    4. Right to Delete Your Account
+                  </h3>
+                  <p>
+                    You can permanently delete your account, wishlists, and
+                    personal data at any time from{" "}
+                    <strong>Profile Settings (&ldquo;Delete Account&rdquo;)</strong>.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsPrivacyModalOpen(false)}
+                className="rounded-xl bg-gradient-to-r from-[#FF5A5F] to-[#FF7A45] text-white px-5 py-2.5 text-xs sm:text-sm font-extrabold shadow-md cursor-pointer"
+              >
+                {lang === "ka" ? "გასაგებია" : "Got It"}
               </button>
             </div>
           </div>

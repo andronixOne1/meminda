@@ -5,7 +5,7 @@ import {
   updateWishlistInDb,
   hashPassword,
   UserRecord,
-  UserGender,
+  sanitizeUserDemographics,
   logAnalyticsEvent,
 } from "@/lib/db";
 import { createSessionForUser, SESSION_COOKIE_NAME, toPublicUser } from "@/lib/auth";
@@ -57,15 +57,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const validGenders: UserGender[] = ["female", "male", "other", "prefer_not_to_say"];
-    const parsedGender: UserGender | undefined = validGenders.includes(body.gender)
-      ? body.gender
-      : undefined;
-    const rawAge = Number(body.age);
-    const parsedAge =
-      Number.isFinite(rawAge) && rawAge >= 5 && rawAge <= 120
-        ? Math.round(rawAge)
-        : undefined;
+    const demo = sanitizeUserDemographics(body.gender, body.age);
     const nowIso = new Date().toISOString();
 
     const userId = `user-${Date.now()}`;
@@ -80,9 +72,11 @@ export async function POST(req: NextRequest) {
       avatarUrl:
         body.avatarUrl ||
         DEFAULT_AVATARS[db.users.length % DEFAULT_AVATARS.length],
-      gender: parsedGender,
-      age: parsedAge,
-      birthYear: parsedAge ? new Date().getFullYear() - parsedAge : undefined,
+      gender: demo.gender,
+      age: demo.age,
+      birthYear: demo.birthYear,
+      isMinorUnder16: demo.isMinorUnder16 || undefined,
+      acceptedPrivacyAt: nowIso,
       createdAt: nowIso,
       lastLoginAt: nowIso,
     };
@@ -105,9 +99,9 @@ export async function POST(req: NextRequest) {
     await logAnalyticsEvent({
       eventType: "user_registered",
       userId: newUser.id,
-      username: newUser.username,
       userGender: newUser.gender,
       userAge: newUser.age,
+      isMinorUnder16: newUser.isMinorUnder16,
       wishlistId: defaultWishlistId,
       metadata: { provider: "password" },
     });

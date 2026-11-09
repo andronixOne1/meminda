@@ -72,9 +72,9 @@ export async function POST(req: NextRequest) {
       await logAnalyticsEvent({
         eventType: "wish_unreserved",
         userId: currentUser?.id,
-        username: currentUser?.username,
         userGender: currentUser?.gender,
         userAge: currentUser?.age,
+        isMinorUnder16: currentUser?.isMinorUnder16,
         itemId: item.id,
         wishlistId: item.wishlistId,
         itemTitle: item.title,
@@ -148,9 +148,9 @@ export async function POST(req: NextRequest) {
     await logAnalyticsEvent({
       eventType: "wish_reserved",
       userId: currentUser?.id,
-      username: currentUser?.username,
       userGender: currentUser?.gender,
       userAge: currentUser?.age,
+      isMinorUnder16: currentUser?.isMinorUnder16,
       itemId: item.id,
       wishlistId: item.wishlistId,
       itemTitle: item.title,
