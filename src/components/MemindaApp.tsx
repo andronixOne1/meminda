@@ -4023,7 +4023,7 @@ export default function MemindaApp() {
       <footer className="max-w-6xl mx-auto px-4 sm:px-6 pt-12 pb-6 text-center">
         <div className="border-t border-orange-200/60 pt-5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
           <span>
-            © {new Date().getFullYear()} Meminda.ge —{" "}
+            © 2026 Meminda.ge —{" "}
             {lang === "ka"
               ? "სურვილებისა და საჩუქრების პლატფორმა"
               : "Universal Wishlist & Gift Registry"}

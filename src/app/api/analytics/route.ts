@@ -13,22 +13,22 @@ import {
 const DEFAULT_ADMIN_KEY = "meminda-admin-2026";
 
 export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const providedKey =
+    searchParams.get("key") || req.headers.get("x-admin-key") || "";
+  const expectedKey = process.env.ANALYTICS_ADMIN_KEY || DEFAULT_ADMIN_KEY;
+
+  if (providedKey !== expectedKey) {
+    return NextResponse.json(
+      {
+        error:
+          "Unauthorized. Provide ?key=<ANALYTICS_ADMIN_KEY> to access analytics.",
+      },
+      { status: 401 }
+    );
+  }
+
   try {
-    const { searchParams } = new URL(req.url);
-    const providedKey =
-      searchParams.get("key") || req.headers.get("x-admin-key") || "";
-    const expectedKey = process.env.ANALYTICS_ADMIN_KEY || DEFAULT_ADMIN_KEY;
-
-    if (providedKey !== expectedKey) {
-      return NextResponse.json(
-        {
-          error:
-            "Unauthorized. Provide ?key=<ANALYTICS_ADMIN_KEY> to access analytics.",
-        },
-        { status: 401 }
-      );
-    }
-
     const db = await readDb();
 
     // Also fetch archived deleted_items and recent analytics_events from Firestore
