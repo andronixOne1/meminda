@@ -624,17 +624,13 @@ export default function MemindaApp() {
     }
   };
 
-  // Email/Password Login via Firebase Auth (with fallback for seeded demo usernames & local password updates)
-  const handleLoginSubmit = async (
-    e: React.FormEvent,
-    quickIdent?: string,
-    quickPass?: string
-  ) => {
+  // Email/Password Login via Firebase Auth
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
     setIsSubmittingAuth(true);
-    const identifier = (quickIdent ?? authIdentifier).trim();
-    const password = quickPass ?? authPassword;
+    const identifier = authIdentifier.trim();
+    const password = authPassword;
 
     try {
       // First try local/backend login (handles demo accounts & updated passwords)
@@ -2066,7 +2062,7 @@ export default function MemindaApp() {
       {/* ========================================================= */}
       {activePage === "wishlist" && activeProfileUser && (
         <div>
-          {/* Top Sub-bar: Back to Home + Quick User Switcher */}
+          {/* Top Sub-bar: Back to Home */}
           <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4 flex items-center justify-between gap-2">
             <button
               onClick={() => setActivePage("home")}
@@ -2075,30 +2071,6 @@ export default function MemindaApp() {
               <ArrowLeft className="h-4 w-4" />
               <span>{t.backToHome}</span>
             </button>
-
-            <div className="flex items-center gap-1.5 overflow-x-auto max-w-[65%] sm:max-w-none py-1 no-scrollbar">
-              {users.map((u) => {
-                const isSelected = u.id === activeProfileUser.id;
-                return (
-                  <button
-                    key={u.id}
-                    onClick={() => openUserWishlist(u.id)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition cursor-pointer shrink-0 ${
-                      isSelected
-                        ? "bg-slate-900 text-white"
-                        : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    <img
-                      src={u.avatarUrl}
-                      alt={u.name}
-                      className="h-4 w-4 rounded-full object-cover"
-                    />
-                    <span className="truncate max-w-[90px]">{u.name}</span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           {/* Profile Hero Banner — Sunshine Coral & Tangerine Pop */}
@@ -2805,30 +2777,6 @@ export default function MemindaApp() {
                     >
                       {isSubmittingAuth ? "..." : t.loginBtn}
                     </button>
-
-                    <div className="pt-3 border-t border-slate-100">
-                      <p className="text-[11px] font-semibold text-slate-500 mb-2">
-                        {t.demoQuickLoginTitle}
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={(e) => handleLoginSubmit(e, "nini", "demo123")}
-                          className="rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-2 text-xs font-bold text-slate-800 transition cursor-pointer"
-                        >
-                          👩 ნინი (@nini)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) =>
-                            handleLoginSubmit(e, "giorgi", "demo123")
-                          }
-                          className="rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-2 text-xs font-bold text-slate-800 transition cursor-pointer"
-                        >
-                          👨 გიორგი (@giorgi)
-                        </button>
-                      </div>
-                    </div>
                   </form>
                 ) : (
                   <form onSubmit={handleRegisterSubmit} className="space-y-3">

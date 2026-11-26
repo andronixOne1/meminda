@@ -90,7 +90,7 @@ export const TRANSLATIONS = {
     authLoginTitle: "ანგარიშზე შესვლა",
     authRegisterTitle: "შექმენი Meminda ანგარიში",
     authIdentifierLabel: "ელ-ფოსტა ან Username",
-    authIdentifierPlaceholder: "მაგ: nini ან nini@meminda.ge",
+    authIdentifierPlaceholder: "მაგ: username ან you@gmail.com",
     authPasswordLabel: "პაროლი",
     authFullNameLabel: "სახელი და გვარი *",
     authFullNamePlaceholder: "მაგ: ნინი შენგელია",
@@ -107,7 +107,6 @@ export const TRANSLATIONS = {
     authAgePlaceholder: "მაგ: 24",
     authBioLabel: "მოკლე აღწერა / ბიო (არასავალდებულო)",
     authBioPlaceholder: "მაგ: ჩემი დაბადების დღისა და ახალმოსახლეობის სურვილები ✨",
-    demoQuickLoginTitle: "სწრაფი შესვლა სატესტო ანგარიშებით:",
     // Profile Settings Modal
     profileSettingsTitle: "პროფილის პარამეტრები",
     profileSettingsSub: "შეცვალეთ ფოტო, სახელი, ელ-ფოსტა ან პაროლი",
@@ -179,7 +178,6 @@ export const TRANSLATIONS = {
       "თქვენი სახელი არავისთან გამოჩნდება — არც სიის მფლობელთან და არც სხვა სტუმრებთან.",
     confirmReserveBtn: "დაჯავშნის დადასტურება 🎁",
     deleteItemConfirm: "სურვილის წაშლა",
-    presetStoreLinksTitle: "სწრაფი ტესტირებისთვის სცადეთ ბმულები:",
   },
   en: {
     brandSub: "Georgian Wishlist & Gift Registry Platform",
@@ -270,7 +268,7 @@ export const TRANSLATIONS = {
     authLoginTitle: "Sign In to Meminda",
     authRegisterTitle: "Create Your Meminda Account",
     authIdentifierLabel: "Email or Username",
-    authIdentifierPlaceholder: "e.g., nini or nini@meminda.ge",
+    authIdentifierPlaceholder: "e.g., username or you@gmail.com",
     authPasswordLabel: "Password",
     authFullNameLabel: "Full Name *",
     authFullNamePlaceholder: "e.g., Nini Shengelia",
@@ -287,7 +285,6 @@ export const TRANSLATIONS = {
     authAgePlaceholder: "e.g., 24",
     authBioLabel: "Short Bio (Optional)",
     authBioPlaceholder: "e.g., My birthday & housewarming wishlists ✨",
-    demoQuickLoginTitle: "Quick-switch with demo accounts:",
     // Profile Settings Modal
     profileSettingsTitle: "Profile Settings",
     profileSettingsSub: "Update your photo, name, email, or password",
@@ -359,6 +356,5 @@ export const TRANSLATIONS = {
       "Your name will be hidden from everyone — both the wishlist owner and other visitors.",
     confirmReserveBtn: "Confirm Gift Reservation 🎁",
     deleteItemConfirm: "Remove item",
-    presetStoreLinksTitle: "Quick-test with popular store links:",
   },
 };
